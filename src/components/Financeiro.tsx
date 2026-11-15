@@ -1,19 +1,27 @@
 import { useMemo, useState } from 'react'
 import { Pedido, Servico } from '../types'
 import {
-  brl, hoje, inp, lbl, card, soma, norm, capitalizar, padronizarModelo, addDias, diffDias, ultimoDiaDoMes, fmtData,
+  brl,
+  hoje,
+  inp,
+  lbl,
+  card,
+  soma,
+  norm,
+  capitalizar,
+  padronizarModelo,
+  addDias,
+  diffDias,
+  ultimoDiaDoMes,
 } from '../lib/utils'
+import CumulativeChart, { PontoAcumulado } from './CumulativeChart'
 
 const COR_PRINCIPAL = '#dc2626'
 const COR_SECUNDARIA = '#475569'
 
 const fmtMoeda = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1).replace('.', ',')}k` : String(Math.round(n)))
 const fmtNum = (n: number) => String(n)
-const fmtInteiro = (n: number) => Math.round(n).toLocaleString('pt-BR')
 
-// ---------------------------------------------------------------------------
-// Gráfico de barras (HTML/CSS)
-// ---------------------------------------------------------------------------
 function BarChart({
   data,
   series,
@@ -67,62 +75,6 @@ function BarChart({
   )
 }
 
-// ---------------------------------------------------------------------------
-// Gráfico de linhas (SVG responsivo) — evolução diária
-// ---------------------------------------------------------------------------
-function LineChart({ pontos }: { pontos: { iso: string; valor: number }[] }) {
-  const W = 700
-  const H = 260
-  const pl = 52
-  const pr = 16
-  const pt = 26
-  const pb = 30
-  const n = pontos.length
-  if (n === 0) return <p className="py-6 text-center text-sm text-slate-500">Sem dados no período.</p>
-
-  const max = Math.max(1, ...pontos.map((p) => p.valor))
-  const maxY = max * 1.15
-  const x = (i: number) => (n === 1 ? (pl + W - pr) / 2 : pl + (i * (W - pl - pr)) / (n - 1))
-  const y = (v: number) => pt + (H - pt - pb) * (1 - v / maxY)
-  const linha = pontos.map((p, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(p.valor).toFixed(1)}`).join(' ')
-  const area = `${linha} L${x(n - 1).toFixed(1)},${H - pb} L${x(0).toFixed(1)},${H - pb} Z`
-  const grade = [0, 0.25, 0.5, 0.75, 1].map((f) => ({ v: maxY * f, y: y(maxY * f) }))
-  const mostrarValores = n <= 31
-  const passo = Math.ceil(n / 10)
-
-  return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="h-auto w-full" role="img" aria-label="Evolução diária do faturamento">
-      {grade.map((g, i) => (
-        <g key={i}>
-          <line x1={pl} x2={W - pr} y1={g.y} y2={g.y} stroke="#e2e8f0" strokeWidth={1} />
-          <text x={pl - 6} y={g.y + 3} textAnchor="end" fontSize={10} fill="#64748b">
-            {fmtMoeda(g.v)}
-          </text>
-        </g>
-      ))}
-      <path d={area} fill="#fee2e2" opacity={0.6} />
-      <path d={linha} fill="none" stroke={COR_PRINCIPAL} strokeWidth={2.5} strokeLinejoin="round" strokeLinecap="round" />
-      {pontos.map((p, i) => (
-        <g key={p.iso}>
-          <circle cx={x(i)} cy={y(p.valor)} r={n > 62 ? 2 : 3.5} fill="#fff" stroke={COR_PRINCIPAL} strokeWidth={2}>
-            <title>{`${fmtData(p.iso)}: ${brl(p.valor)}`}</title>
-          </circle>
-          {mostrarValores && p.valor > 0 && (
-            <text x={x(i)} y={y(p.valor) - 8} textAnchor="middle" fontSize={n > 16 ? 9 : 10} fontWeight={600} fill="#334155">
-              {fmtInteiro(p.valor)}
-            </text>
-          )}
-          {i % passo === 0 && (
-            <text x={x(i)} y={H - 10} textAnchor="middle" fontSize={10} fill="#64748b">
-              {n <= 31 ? p.iso.slice(8, 10) : `${p.iso.slice(8, 10)}/${p.iso.slice(5, 7)}`}
-            </text>
-          )}
-        </g>
-      ))}
-    </svg>
-  )
-}
-
 function Indicador({ titulo, valor, cor }: { titulo: string; valor: string; cor?: string }) {
   return (
     <div className={card}>
@@ -146,7 +98,6 @@ function agrupar(itens: Servico[], chaveNome: (s: Servico) => { key: string; nom
   return [...mapa.values()].sort((a, b) => b.fat - a.fat)
 }
 
-// ---------------------------------------------------------------------------
 export default function Financeiro({ servicos, pedidos }: { servicos: Servico[]; pedidos: Pedido[] }) {
   const [modo, setModo] = useState<'mes' | 'periodo'>('mes')
   const [mes, setMes] = useState(hoje().slice(0, 7))
@@ -170,7 +121,6 @@ export default function Financeiro({ servicos, pedidos }: { servicos: Servico[];
   const insumos = soma(pd.map((p) => p.valor))
   const lucro = recebido - insumos
 
-  // intervalo usado nos gráficos temporais
   const { rs, re, dias } = useMemo(() => {
     const datas = [...sv.map((s) => s.dataEntrada), ...pd.map((p) => p.data)].sort()
     const a = ini || datas[0] || hoje()
@@ -178,7 +128,6 @@ export default function Financeiro({ servicos, pedidos }: { servicos: Servico[];
     return { rs: a, re: b, dias: a <= b ? diffDias(a, b) + 1 : 0 }
   }, [sv, pd, ini, fim])
 
-  // faturamento x custos x volume (semanas se o período for curto, senão meses)
   const periodos = useMemo(() => {
     if (dias === 0) return [] as { label: string; fat: number; custo: number; vol: number }[]
     let buckets: { label: string; fat: number; custo: number; vol: number }[]
@@ -214,24 +163,25 @@ export default function Financeiro({ servicos, pedidos }: { servicos: Servico[];
   }, [sv, pd, rs, re, dias])
   const semanal = dias <= 62
 
-  // evolução diária
-  const diario = useMemo(() => {
+  // Evolução diária ACUMULADA do faturamento (soma dia a dia até o final do mês/período)
+  const diarioAcumulado = useMemo<PontoAcumulado[]>(() => {
     if (dias === 0 || dias > 366) return []
     const mapa = new Map<string, number>()
     sv.forEach((s) => mapa.set(s.dataEntrada, (mapa.get(s.dataEntrada) || 0) + s.valor))
+    let acumulado = 0
     return Array.from({ length: dias }, (_, i) => {
       const iso = addDias(rs, i)
-      return { iso, valor: mapa.get(iso) || 0 }
+      const valorDia = mapa.get(iso) || 0
+      acumulado += valorDia
+      return { iso, valorDia, acumulado }
     })
   }, [sv, rs, dias])
 
-  // por tipo de aparelho
   const porTipo = useMemo(
     () => agrupar(sv, (s) => ({ key: norm(s.tipo) || 'sem tipo', nome: capitalizar(s.tipo) || 'Sem tipo' })),
     [sv]
   )
 
-  // por marca
   const porMarca = useMemo(
     () => agrupar(sv, (s) => ({ key: norm(s.marca) || 'sem marca', nome: capitalizar(s.marca) || 'Sem marca' })),
     [sv]
@@ -239,11 +189,10 @@ export default function Financeiro({ servicos, pedidos }: { servicos: Servico[];
   const marcasGrafico = useMemo(() => {
     const topo = porMarca.slice(0, 8)
     const resto = porMarca.slice(8)
-    if (resto.length) topo.push({ nome: 'Outras', fat: soma(resto.map((g) => g.fat)), qtd: soma(resto.map((g) => g.qtd)) })
+    if (resto.length) topo.push({ nome: 'Outros', fat: soma(resto.map((g) => g.fat)), qtd: soma(resto.map((g) => g.qtd)) })
     return topo
   }, [porMarca])
 
-  // ranking de modelos
   const modelos = useMemo(() => {
     const mapa = new Map<string, { marca: string; modelo: string; fat: number; qtd: number; marcaKey: string }>()
     sv.forEach((s) => {
@@ -269,27 +218,27 @@ export default function Financeiro({ servicos, pedidos }: { servicos: Servico[];
   return (
     <div className="space-y-4">
       <section className={card}>
-        <div className="flex flex-wrap items-end gap-3">
-          <div className="flex gap-2">
-            <button className={botaoModo(modo === 'mes')} onClick={() => setModo('mes')}>
+        <div className="grid grid-cols-1 gap-3 sm:flex sm:flex-wrap sm:items-end">
+          <div className="flex flex-wrap gap-2">
+            <button type="button" className={botaoModo(modo === 'mes')} onClick={() => setModo('mes')}>
               Mês de fechamento
             </button>
-            <button className={botaoModo(modo === 'periodo')} onClick={() => setModo('periodo')}>
+            <button type="button" className={botaoModo(modo === 'periodo')} onClick={() => setModo('periodo')}>
               Período personalizado
             </button>
           </div>
           {modo === 'mes' ? (
-            <div>
+            <div className="min-w-0 sm:w-48">
               <label className={lbl}>Mês</label>
               <input type="month" className={inp} value={mes} onChange={(e) => setMes(e.target.value)} />
             </div>
           ) : (
             <>
-              <div>
+              <div className="min-w-0 sm:w-44">
                 <label className={lbl}>Data inicial</label>
                 <input type="date" className={inp} value={pIni} onChange={(e) => setPIni(e.target.value)} />
               </div>
-              <div>
+              <div className="min-w-0 sm:w-44">
                 <label className={lbl}>Data final</label>
                 <input type="date" className={inp} value={pFim} onChange={(e) => setPFim(e.target.value)} />
               </div>
@@ -308,11 +257,14 @@ export default function Financeiro({ servicos, pedidos }: { servicos: Servico[];
       </div>
 
       <section className={card}>
-        <h3 className="mb-2 font-bold text-slate-900">Evolução diária do faturamento (R$)</h3>
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <h3 className="font-bold text-slate-900">Evolução diária acumulada do faturamento (R$)</h3>
+          <span className="text-xs font-semibold text-red-600">Total acumulado: {brl(faturamento)}</span>
+        </div>
         {dias > 366 ? (
           <p className="py-6 text-center text-sm text-slate-500">Período muito longo para a visão diária. Selecione até 1 ano.</p>
         ) : (
-          <LineChart pontos={diario} />
+          <CumulativeChart pontos={diarioAcumulado} />
         )}
       </section>
 
@@ -378,7 +330,7 @@ export default function Financeiro({ servicos, pedidos }: { servicos: Servico[];
         <div className={card}>
           <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
             <h3 className="font-bold text-slate-900">Modelos atendidos no período</h3>
-            <div className="w-full sm:w-56">
+            <div className="w-full min-w-0 sm:w-56">
               <label className={lbl}>Filtrar por marca</label>
               <select className={inp} value={fMarca} onChange={(e) => setFMarca(e.target.value)}>
                 <option value="">Todas as marcas</option>

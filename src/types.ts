@@ -1,13 +1,10 @@
 export type Tipo = 'Celular' | 'Tablet' | 'Relógio'
-export type Marca = 'Apple' | 'Samsung' | 'Motorola' | 'Xiaomi' | 'Outra'
+export type Marca = 'Apple' | 'Samsung' | 'Motorola' | 'Xiaomi' | 'Outros'
 export type StatusBancada = 'Em andamento' | 'Pronto' | 'Entregue'
 export type StatusFin = 'Pendente' | 'Pago'
 
 export const TIPOS: Tipo[] = ['Celular', 'Tablet', 'Relógio']
-// Sugestões para os campos livres da tela de Serviços (o usuário pode digitar qualquer outro texto)
-export const TIPOS_SUGESTAO: string[] = ['Celular', 'Tablet', 'Relógio']
-export const MARCAS_SUGESTAO: string[] = ['Apple', 'Samsung', 'Motorola', 'Xiaomi']
-export const MARCAS: Marca[] = ['Apple', 'Samsung', 'Motorola', 'Xiaomi', 'Outra']
+export const MARCAS: Marca[] = ['Apple', 'Samsung', 'Motorola', 'Xiaomi', 'Outros']
 export const STATUS_BANCADA: StatusBancada[] = ['Em andamento', 'Pronto', 'Entregue']
 
 export const SERVICOS_POR_TIPO: Record<Tipo, string[]> = {
@@ -94,4 +91,40 @@ export interface Lojista {
   id: string
   nome: string
   telefone: string
+}
+
+export interface MasterConfig {
+  nomeLoja: string
+  subtituloLogin: string
+  abaInicio: string
+  abaServicos: string
+  abaPedidos: string
+  abaFinanceiro: string
+  abaPrecos: string
+  labelCliente: string
+  labelStatus: string
+  labelObs: string
+  whatsCabecalho: string
+  whatsLinha: string
+  whatsTotal: string
+  whatsRodape: string
+  pinMaster: string
+}
+
+export const MASTER_CONFIG_PADRAO: MasterConfig = {
+  nomeLoja: 'IPhoncel',
+  subtituloLogin: 'Gestão do laboratório · acesso restrito',
+  abaInicio: 'Início',
+  abaServicos: 'Serviços',
+  abaPedidos: 'Pedidos & Insumos',
+  abaFinanceiro: 'Financeiro',
+  abaPrecos: 'Tabela de Preços',
+  labelCliente: 'Cliente',
+  labelStatus: 'Status',
+  labelObs: 'Observação',
+  whatsCabecalho: 'Olá, {cliente}! 👋\nSegue o resumo dos serviços pendentes no laboratório *{loja}*:',
+  whatsLinha: '{numero}) {data} – {aparelho} – {servico} – {valor}',
+  whatsTotal: '*Total a pagar: {total}*',
+  whatsRodape: 'Qualquer dúvida é só chamar. Obrigado pela parceria! 🙏',
+  pinMaster: '1234',
 }

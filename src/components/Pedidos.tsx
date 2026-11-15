@@ -59,12 +59,12 @@ export default function Pedidos({ pedidos, onSave, onRemove }: Props) {
     <div className="space-y-4">
       <section className={card}>
         <h2 className="mb-3 text-lg font-bold text-slate-900">{editId ? 'Editar pedido / insumo' : 'Novo pedido / insumo'}</h2>
-        <form onSubmit={enviar} className="grid grid-cols-2 gap-3 sm:grid-cols-5">
-          <div>
+        <form onSubmit={enviar} className="grid grid-cols-1 gap-3 sm:grid-cols-5">
+          <div className="min-w-0">
             <label className={lbl}>Data</label>
             <input type="date" className={inp} value={data} onChange={(e) => setData(e.target.value)} />
           </div>
-          <div>
+          <div className="min-w-0">
             <label className={lbl}>Fornecedor</label>
             <input list="lista-fornecedores" className={inp} value={fornecedor} onChange={(e) => setFornecedor(e.target.value)} />
             <datalist id="lista-fornecedores">
@@ -73,7 +73,7 @@ export default function Pedidos({ pedidos, onSave, onRemove }: Props) {
               ))}
             </datalist>
           </div>
-          <div className="col-span-2">
+          <div className="min-w-0 sm:col-span-2">
             <label className={lbl}>Descrição</label>
             <input
               className={inp}
@@ -82,11 +82,11 @@ export default function Pedidos({ pedidos, onSave, onRemove }: Props) {
               onChange={(e) => setDescricao(e.target.value)}
             />
           </div>
-          <div>
+          <div className="min-w-0">
             <label className={lbl}>Valor (R$)</label>
             <input className={inp} inputMode="decimal" value={valor} onChange={(e) => setValor(e.target.value)} />
           </div>
-          <div className="col-span-2 flex gap-2 sm:col-span-5">
+          <div className="flex gap-2 sm:col-span-5">
             <button className={btnPrimary}>
               {editId ? <Check size={16} /> : <Plus size={16} />} {editId ? 'Salvar alterações' : 'Lançar compra'}
             </button>
@@ -101,7 +101,7 @@ export default function Pedidos({ pedidos, onSave, onRemove }: Props) {
 
       <section className={card}>
         <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
-          <div>
+          <div className="w-full min-w-0 sm:w-auto">
             <label className={lbl}>Mês</label>
             <input type="month" className={inp} value={mes} onChange={(e) => setMes(e.target.value)} />
           </div>

@@ -1,18 +1,48 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ArrowLeft, Check, ClipboardCopy, MessageCircle, Pencil, Plus, Trash2, Users, X } from 'lucide-react'
 import {
-  Servico, Lojista, Preco, StatusBancada, StatusFin,
-  STATUS_BANCADA, TIPOS_SUGESTAO, MARCAS_SUGESTAO,
+  Servico,
+  Lojista,
+  Preco,
+  Tipo,
+  Marca,
+  StatusBancada,
+  StatusFin,
+  MasterConfig,
+  STATUS_BANCADA,
+  TIPOS,
+  MARCAS,
 } from '../types'
 import {
-  uid, hoje, brl, fmtData, whatsLink, norm, inp, lbl, copiar, soma, btnPrimary, btnGhost, card,
-  ultimoDiaDoMes, capitalizar, padronizarModelo, buscarPreco, valorAuto, servicosDoTipo, nomeAparelho,
+  uid,
+  hoje,
+  brl,
+  fmtData,
+  whatsLink,
+  norm,
+  inp,
+  lbl,
+  copiar,
+  soma,
+  btnPrimary,
+  btnGhost,
+  card,
+  ultimoDiaDoMes,
+  padronizarModelo,
+  buscarPreco,
+  valorAuto,
+  servicosDoTipo,
+  formatarMensagemCobranca,
 } from '../lib/utils'
 
 interface Props {
   servicos: Servico[]
   lojistas: Lojista[]
   precos: Preco[]
+  config: MasterConfig
+  abrirNovoDireto?: boolean
+  statusInicialFiltro?: StatusBancada | ''
+  onConsumiuAtalho?: () => void
   onSave: (s: Servico) => void
   onRemove: (id: string) => void
   onSaveLojista: (l: Lojista) => void
@@ -22,8 +52,8 @@ interface Props {
 type Linha = { id: string; servico: string; valor: string; manual: boolean }
 type Aparelho = {
   key: string
-  tipo: string
-  marca: string
+  tipo: Tipo
+  marca: Marca
   modelo: string
   linhas: Linha[]
   obs: string
@@ -38,7 +68,7 @@ const aparelhoVazio = (): Aparelho => ({
   tipo: 'Celular',
   marca: 'Apple',
   modelo: '',
-  linhas: [linhaVazia('Troca de Vidro')],
+  linhas: [linhaVazia('')],
   obs: '',
   statusBancada: 'Em andamento',
   statusFin: 'Pendente',
@@ -57,10 +87,17 @@ const corBancada: Record<StatusBancada, string> = {
 // Modal: Gerenciar Clientes
 // ---------------------------------------------------------------------------
 function ClientesModal({
-  lojistas, servicos, onClose, onSaveLojista, onRemoveLojista, onSaveServico,
+  lojistas,
+  servicos,
+  labelCliente,
+  onClose,
+  onSaveLojista,
+  onRemoveLojista,
+  onSaveServico,
 }: {
   lojistas: Lojista[]
   servicos: Servico[]
+  labelCliente: string
   onClose: () => void
   onSaveLojista: (l: Lojista) => void
   onRemoveLojista: (id: string) => void
@@ -88,13 +125,12 @@ function ClientesModal({
   function salvar(l: Lojista) {
     const n = nome.trim()
     if (!n) {
-      alert('O nome do cliente não pode ficar vazio.')
+      alert(`O nome do ${labelCliente.toLowerCase()} não pode ficar vazio.`)
       return
     }
     const novo: Lojista = { id: norm(n), nome: n, telefone: tel.trim() }
     if (novo.id !== l.id) onRemoveLojista(l.id)
     onSaveLojista(novo)
-    // mantém os serviços já lançados coerentes com o cadastro
     servicos
       .filter((s) => norm(s.lojista) === l.id)
       .forEach((s) => onSaveServico({ ...s, lojista: n, telefone: tel.trim() }))
@@ -102,7 +138,8 @@ function ClientesModal({
   }
 
   function excluir(l: Lojista) {
-    if (confirm(`Excluir "${l.nome}" do cadastro de clientes?\nOs serviços já lançados continuam na lista.`)) onRemoveLojista(l.id)
+    if (confirm(`Excluir "${l.nome}" do cadastro de ${labelCliente.toLowerCase()}s?\nOs serviços já lançados continuam na lista.`))
+      onRemoveLojista(l.id)
   }
 
   const qtd = (l: Lojista) => servicos.filter((s) => norm(s.lojista) === l.id).length
@@ -114,16 +151,18 @@ function ClientesModal({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-slate-200 p-4">
-          <h2 className="text-lg font-bold text-slate-900">Gerenciar Clientes</h2>
+          <h2 className="text-lg font-bold text-slate-900">Gerenciar {labelCliente}s</h2>
           <button onClick={onClose} className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100" aria-label="Fechar">
             <X size={20} />
           </button>
         </div>
         <div className="border-b border-slate-100 p-3">
-          <input className={inp} placeholder="Buscar cliente…" value={busca} onChange={(e) => setBusca(e.target.value)} />
+          <input className={inp} placeholder={`Buscar ${labelCliente.toLowerCase()}…`} value={busca} onChange={(e) => setBusca(e.target.value)} />
         </div>
         <ul className="flex-1 divide-y divide-slate-100 overflow-y-auto">
-          {lista.length === 0 && <li className="p-6 text-center text-sm text-slate-500">Nenhum cliente cadastrado ainda.</li>}
+          {lista.length === 0 && (
+            <li className="p-6 text-center text-sm text-slate-500">Nenhum {labelCliente.toLowerCase()} cadastrado ainda.</li>
+          )}
           {lista.map((l) => (
             <li key={l.id} className="p-3">
               {editando === l.id ? (
@@ -179,7 +218,19 @@ function ClientesModal({
 // ---------------------------------------------------------------------------
 // Tela principal
 // ---------------------------------------------------------------------------
-export default function Servicos({ servicos, lojistas, precos, onSave, onRemove, onSaveLojista, onRemoveLojista }: Props) {
+export default function Servicos({
+  servicos,
+  lojistas,
+  precos,
+  config,
+  abrirNovoDireto,
+  statusInicialFiltro,
+  onConsumiuAtalho,
+  onSave,
+  onRemove,
+  onSaveLojista,
+  onRemoveLojista,
+}: Props) {
   const [view, setView] = useState<'lista' | 'form'>('lista')
   const [modalClientes, setModalClientes] = useState(false)
   const [copiado, setCopiado] = useState(false)
@@ -198,6 +249,17 @@ export default function Servicos({ servicos, lojistas, precos, onSave, onRemove,
   const [fCli, setFCli] = useState('')
   const [fBanc, setFBanc] = useState('')
   const [fFin, setFFin] = useState('')
+
+  useEffect(() => {
+    if (abrirNovoDireto) {
+      abrirNovo()
+      onConsumiuAtalho?.()
+    } else if (statusInicialFiltro !== undefined) {
+      setFBanc(statusInicialFiltro)
+      onConsumiuAtalho?.()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [abrirNovoDireto, statusInicialFiltro])
 
   // preenche valores automaticamente (linhas que o usuário não digitou manualmente)
   useEffect(() => {
@@ -230,12 +292,8 @@ export default function Servicos({ servicos, lojistas, precos, onSave, onRemove,
       p.map((a) => (a.key === key ? { ...a, linhas: a.linhas.map((l) => (l.id === id ? { ...l, ...patch } : l)) } : a))
     )
 
-  function mudarTipo(a: Aparelho, tipo: string) {
-    const sugestoes = servicosDoTipo(tipo)
-    const primeira = a.linhas[0]
-    const valida = sugestoes.some((s) => norm(s) === norm(primeira?.servico || ''))
-    const linhas = valida || !primeira ? a.linhas : [{ ...primeira, servico: sugestoes[0] || '', manual: false }, ...a.linhas.slice(1)]
-    setAp(a.key, { tipo, linhas })
+  function mudarTipo(a: Aparelho, tipo: Tipo) {
+    setAp(a.key, { tipo })
   }
 
   function mudarCliente(nome: string) {
@@ -260,11 +318,13 @@ export default function Servicos({ servicos, lojistas, precos, onSave, onRemove,
     setCliente(s.lojista)
     setTelefone(s.telefone)
     const itens = s.itens && s.itens.length ? s.itens : [{ servico: s.servico, valor: s.valor }]
+    const tipoValido: Tipo = TIPOS.includes(s.tipo as Tipo) ? (s.tipo as Tipo) : 'Celular'
+    const marcaValida: Marca = MARCAS.includes(s.marca as Marca) ? (s.marca as Marca) : 'Outros'
     setAparelhos([
       {
         key: uid(),
-        tipo: s.tipo,
-        marca: s.marca,
+        tipo: tipoValido,
+        marca: marcaValida,
         modelo: s.modelo,
         linhas: itens.map((i) => ({ id: uid(), servico: i.servico, valor: String(i.valor), manual: true })),
         obs: s.obs,
@@ -281,7 +341,7 @@ export default function Servicos({ servicos, lojistas, precos, onSave, onRemove,
     e.preventDefault()
     const nomeCli = cliente.trim()
     if (!nomeCli) {
-      alert('Informe o cliente.')
+      alert(`Informe o ${config.labelCliente.toLowerCase()}.`)
       return
     }
     const registros: Servico[] = []
@@ -305,8 +365,8 @@ export default function Servicos({ servicos, lojistas, precos, onSave, onRemove,
         dataEntrada,
         lojista: nomeCli,
         telefone: telefone.trim(),
-        tipo: capitalizar(a.tipo) || 'Celular',
-        marca: capitalizar(a.marca),
+        tipo: a.tipo,
+        marca: a.marca,
         modelo,
         servico: itens.map((l) => l.servico).join(' + '),
         itens,
@@ -326,7 +386,10 @@ export default function Servicos({ servicos, lojistas, precos, onSave, onRemove,
   const proximoStatus = (s: StatusBancada): StatusBancada =>
     STATUS_BANCADA[(STATUS_BANCADA.indexOf(s) + 1) % STATUS_BANCADA.length]
 
-  const nomesClientes = useMemo(() => [...new Set(servicos.map((s) => s.lojista))].sort((a, b) => a.localeCompare(b, 'pt-BR')), [servicos])
+  const nomesClientes = useMemo(
+    () => [...new Set(servicos.map((s) => s.lojista))].sort((a, b) => a.localeCompare(b, 'pt-BR')),
+    [servicos]
+  )
 
   const lista = useMemo(
     () =>
@@ -335,7 +398,7 @@ export default function Servicos({ servicos, lojistas, precos, onSave, onRemove,
           (s) =>
             (!ini || s.dataEntrada >= ini) &&
             (!fim || s.dataEntrada <= fim) &&
-            (!fCli || s.lojista === fCli) &&
+            (!fCli.trim() || norm(s.lojista).includes(norm(fCli))) &&
             (!fBanc || s.statusBancada === fBanc) &&
             (!fFin || s.statusFin === fFin)
         )
@@ -347,12 +410,7 @@ export default function Servicos({ servicos, lojistas, precos, onSave, onRemove,
   async function copiarCobranca() {
     const grupos = new Map<string, Servico[]>()
     pendentesLista.forEach((s) => grupos.set(s.lojista, [...(grupos.get(s.lojista) || []), s]))
-    const blocos = [...grupos.entries()].map(([nome, itens]) => {
-      const linhas = itens
-        .sort((a, b) => a.dataEntrada.localeCompare(b.dataEntrada))
-        .map((s, i) => `${i + 1}) ${fmtData(s.dataEntrada)} – ${nomeAparelho(s)} – ${s.servico} – ${brl(s.valor)}`)
-      return `Olá, ${nome}! 👋\nSegue o resumo dos serviços pendentes no laboratório *IPhoncel*:\n\n${linhas.join('\n')}\n\n*Total a pagar: ${brl(soma(itens.map((s) => s.valor)))}*\n\nQualquer dúvida é só chamar. Obrigado pela parceria! 🙏`
-    })
+    const blocos = [...grupos.entries()].map(([nome, itens]) => formatarMensagemCobranca(nome, itens, config))
     const ok = await copiar(blocos.join('\n\n————————\n\n'))
     if (ok) {
       setCopiado(true)
@@ -367,7 +425,7 @@ export default function Servicos({ servicos, lojistas, precos, onSave, onRemove,
       <form onSubmit={salvar} className="space-y-4">
         <div className="flex items-center justify-between gap-3">
           <button type="button" className={btnGhost} onClick={() => setView('lista')}>
-            <ArrowLeft size={16} /> Voltar para Serviços
+            <ArrowLeft size={16} /> Voltar para {config.abaServicos}
           </button>
           <h2 className="text-lg font-bold text-slate-900">{editId ? 'Editar serviço' : 'Novo serviço'}</h2>
         </div>
@@ -377,37 +435,33 @@ export default function Servicos({ servicos, lojistas, precos, onSave, onRemove,
             <option key={l.id} value={l.nome} />
           ))}
         </datalist>
-        <datalist id="lista-tipos">
-          {TIPOS_SUGESTAO.map((t) => (
-            <option key={t} value={t} />
-          ))}
-        </datalist>
-        <datalist id="lista-marcas">
-          {MARCAS_SUGESTAO.map((m) => (
-            <option key={m} value={m} />
-          ))}
-        </datalist>
 
         <section className={card}>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <div>
+            <div className="min-w-0">
               <label className={lbl}>Data de entrada</label>
               <input type="date" className={inp} value={dataEntrada} onChange={(e) => setDataEntrada(e.target.value)} />
             </div>
-            <div>
-              <label className={lbl}>Cliente</label>
+            <div className="min-w-0">
+              <label className={lbl}>{config.labelCliente}</label>
               <input
                 list="lista-clientes"
                 className={inp}
-                placeholder="Nome do cliente"
+                placeholder={`Nome do ${config.labelCliente.toLowerCase()}`}
                 value={cliente}
                 onChange={(e) => mudarCliente(e.target.value)}
               />
             </div>
-            <div>
+            <div className="min-w-0">
               <label className={lbl}>WhatsApp / Telefone</label>
               <div className="flex gap-2">
-                <input className={inp} inputMode="tel" placeholder="(13) 99999-9999" value={telefone} onChange={(e) => setTelefone(e.target.value)} />
+                <input
+                  className={inp}
+                  inputMode="tel"
+                  placeholder="(13) 99999-9999"
+                  value={telefone}
+                  onChange={(e) => setTelefone(e.target.value)}
+                />
                 {whatsLink(telefone) && (
                   <a
                     href={whatsLink(telefone)}
@@ -442,28 +496,28 @@ export default function Servicos({ servicos, lojistas, precos, onSave, onRemove,
                 )}
               </div>
 
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                <div>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
+                <div className="min-w-0">
                   <label className={lbl}>Tipo</label>
-                  <input
-                    list="lista-tipos"
-                    className={inp}
-                    value={a.tipo}
-                    onChange={(e) => mudarTipo(a, e.target.value)}
-                    onBlur={(e) => setAp(a.key, { tipo: capitalizar(e.target.value) })}
-                  />
+                  <select className={inp} value={a.tipo} onChange={(e) => mudarTipo(a, e.target.value as Tipo)}>
+                    {TIPOS.map((t) => (
+                      <option key={t} value={t}>
+                        {t}
+                      </option>
+                    ))}
+                  </select>
                 </div>
-                <div>
+                <div className="min-w-0">
                   <label className={lbl}>Marca</label>
-                  <input
-                    list="lista-marcas"
-                    className={inp}
-                    value={a.marca}
-                    onChange={(e) => setAp(a.key, { marca: e.target.value })}
-                    onBlur={(e) => setAp(a.key, { marca: capitalizar(e.target.value) })}
-                  />
+                  <select className={inp} value={a.marca} onChange={(e) => setAp(a.key, { marca: e.target.value as Marca })}>
+                    {MARCAS.map((m) => (
+                      <option key={m} value={m}>
+                        {m}
+                      </option>
+                    ))}
+                  </select>
                 </div>
-                <div className="col-span-2">
+                <div className="min-w-0 sm:col-span-2">
                   <label className={lbl}>
                     Modelo {preco && <span className="text-emerald-600">· encontrado na tabela</span>}
                   </label>
@@ -488,7 +542,7 @@ export default function Servicos({ servicos, lojistas, precos, onSave, onRemove,
                   <label className="text-xs font-medium text-slate-600">Serviço executado</label>
                   <button
                     type="button"
-                    onClick={() => setAp(a.key, { linhas: [...a.linhas, linhaVazia()] })}
+                    onClick={() => setAp(a.key, { linhas: [...a.linhas, linhaVazia('')] })}
                     className="flex h-7 w-7 items-center justify-center rounded-lg bg-red-600 text-white hover:bg-red-700"
                     title="Adicionar outro serviço neste aparelho"
                     aria-label="Adicionar outro serviço"
@@ -502,11 +556,11 @@ export default function Servicos({ servicos, lojistas, precos, onSave, onRemove,
                       <input
                         list={`sv-${a.key}`}
                         className={`${inp} flex-1`}
-                        placeholder="Serviço"
+                        placeholder="Digite ou selecione o serviço"
                         value={l.servico}
                         onChange={(e) => setLinha(a.key, l.id, { servico: e.target.value, manual: false })}
                       />
-                      <div className="relative w-32 shrink-0">
+                      <div className="relative w-28 shrink-0 sm:w-32">
                         <span className="pointer-events-none absolute left-3 top-2 text-sm text-slate-400">R$</span>
                         <input
                           className={`${inp} pl-9 text-right`}
@@ -534,28 +588,28 @@ export default function Servicos({ servicos, lojistas, precos, onSave, onRemove,
                 </p>
               </div>
 
-              <div className="mt-3">
-                <label className={lbl}>Observação</label>
+              <div className="mt-3 min-w-0">
+                <label className={lbl}>{config.labelObs}</label>
                 <input className={inp} maxLength={120} value={a.obs} onChange={(e) => setAp(a.key, { obs: e.target.value })} />
               </div>
 
               <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
-                <div>
-                  <label className={lbl}>Status na bancada</label>
+                <div className="min-w-0">
+                  <label className={lbl}>{config.labelStatus}</label>
                   <select className={inp} value={a.statusBancada} onChange={(e) => setAp(a.key, { statusBancada: e.target.value as StatusBancada })}>
                     {STATUS_BANCADA.map((s) => (
                       <option key={s}>{s}</option>
                     ))}
                   </select>
                 </div>
-                <div>
+                <div className="min-w-0">
                   <label className={lbl}>Status financeiro</label>
                   <select className={inp} value={a.statusFin} onChange={(e) => setAp(a.key, { statusFin: e.target.value as StatusFin })}>
                     <option>Pendente</option>
                     <option>Pago</option>
                   </select>
                 </div>
-                <div>
+                <div className="min-w-0">
                   <label className={lbl}>Data do pagamento (opcional)</label>
                   <input
                     type="date"
@@ -600,31 +654,49 @@ export default function Servicos({ servicos, lojistas, precos, onSave, onRemove,
           <Plus size={18} /> Novo Serviço
         </button>
         <button onClick={() => setModalClientes(true)} className={btnGhost}>
-          <Users size={16} /> Gerenciar Clientes
+          <Users size={16} /> Gerenciar {config.labelCliente}s
         </button>
       </div>
 
       <section className={card}>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
-          <div>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          <div className="min-w-0">
             <label className={lbl}>Data inicial</label>
             <input type="date" className={inp} value={ini} onChange={(e) => setIni(e.target.value)} />
           </div>
-          <div>
+          <div className="min-w-0">
             <label className={lbl}>Data final</label>
             <input type="date" className={inp} value={fim} onChange={(e) => setFim(e.target.value)} />
           </div>
-          <div>
-            <label className={lbl}>Cliente</label>
-            <select className={inp} value={fCli} onChange={(e) => setFCli(e.target.value)}>
-              <option value="">Todos</option>
-              {nomesClientes.map((n) => (
-                <option key={n}>{n}</option>
-              ))}
-            </select>
+          <div className="min-w-0">
+            <label className={lbl}>{config.labelCliente}</label>
+            <div className="relative">
+              <input
+                list="filtro-clientes-lista"
+                className={`${inp} ${fCli ? 'pr-8' : ''}`}
+                placeholder="Todos ou digite..."
+                value={fCli}
+                onChange={(e) => setFCli(e.target.value)}
+              />
+              {fCli && (
+                <button
+                  type="button"
+                  onClick={() => setFCli('')}
+                  className="absolute right-2 top-2 rounded p-0.5 text-slate-400 hover:text-slate-700"
+                  title="Limpar filtro"
+                >
+                  <X size={15} />
+                </button>
+              )}
+              <datalist id="filtro-clientes-lista">
+                {nomesClientes.map((n) => (
+                  <option key={n} value={n} />
+                ))}
+              </datalist>
+            </div>
           </div>
-          <div>
-            <label className={lbl}>Bancada</label>
+          <div className="min-w-0">
+            <label className={lbl}>{config.labelStatus}</label>
             <select className={inp} value={fBanc} onChange={(e) => setFBanc(e.target.value)}>
               <option value="">Todos</option>
               {STATUS_BANCADA.map((s) => (
@@ -632,7 +704,7 @@ export default function Servicos({ servicos, lojistas, precos, onSave, onRemove,
               ))}
             </select>
           </div>
-          <div>
+          <div className="min-w-0">
             <label className={lbl}>Financeiro</label>
             <select className={inp} value={fFin} onChange={(e) => setFFin(e.target.value)}>
               <option value="">Todos</option>
@@ -743,6 +815,7 @@ export default function Servicos({ servicos, lojistas, precos, onSave, onRemove,
         <ClientesModal
           lojistas={lojistas}
           servicos={servicos}
+          labelCliente={config.labelCliente}
           onClose={() => setModalClientes(false)}
           onSaveLojista={onSaveLojista}
           onRemoveLojista={onRemoveLojista}

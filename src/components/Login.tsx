@@ -1,9 +1,20 @@
 import { useState } from 'react'
 import { Smartphone, LogIn, FlaskConical, AlertTriangle } from 'lucide-react'
 import { supabase, supabaseConfigurado } from '../lib/supabase'
+import { MASTER_CONFIG_PADRAO, MasterConfig } from '../types'
 import { btnPrimary, inp, lbl } from '../lib/utils'
 
+function lerConfigLocal(): MasterConfig {
+  try {
+    const raw = localStorage.getItem('iphoncel:master_config')
+    return raw ? { ...MASTER_CONFIG_PADRAO, ...JSON.parse(raw) } : MASTER_CONFIG_PADRAO
+  } catch {
+    return MASTER_CONFIG_PADRAO
+  }
+}
+
 export default function Login({ onLocal }: { onLocal: () => void }) {
+  const [cfg] = useState<MasterConfig>(lerConfigLocal)
   const [email, setEmail] = useState('')
   const [senha, setSenha] = useState('')
   const [erro, setErro] = useState('')
@@ -26,8 +37,8 @@ export default function Login({ onLocal }: { onLocal: () => void }) {
           <div className="rounded-2xl bg-red-100 p-3 text-red-600">
             <Smartphone size={32} />
           </div>
-          <h1 className="text-2xl font-bold text-slate-900">IPhoncel</h1>
-          <p className="text-sm text-slate-500">Gestão do laboratório · acesso restrito</p>
+          <h1 className="text-2xl font-bold text-slate-900">{cfg.nomeLoja}</h1>
+          <p className="text-center text-sm text-slate-500">{cfg.subtituloLogin}</p>
         </div>
 
         {!supabaseConfigurado && (

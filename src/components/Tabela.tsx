@@ -84,7 +84,7 @@ function inferirMarca(v: any, modelo: string): Marca {
   if (m.includes('galaxy') || m.startsWith('samsung')) return 'Samsung'
   if (m.startsWith('moto') || m.startsWith('edge')) return 'Motorola'
   if (m.includes('redmi') || m.includes('poco') || m.startsWith('mi ') || m.includes('xiaomi')) return 'Xiaomi'
-  return 'Outra'
+  return 'Outros'
 }
 
 export default function Tabela({ precos, onSave, onSaveMany, onRemove }: Props) {

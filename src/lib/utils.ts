@@ -1,7 +1,7 @@
-import { Preco, SERVICO_CHAVE, SERVICOS_POR_TIPO, PrecoKey } from '../types'
+import { Preco, SERVICO_CHAVE, SERVICOS_POR_TIPO, PrecoKey, MASTER_CONFIG_PADRAO, MasterConfig, Servico } from '../types'
 
 export const inp =
-  'w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100'
+  'w-full min-w-0 max-w-full appearance-none rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100'
 export const lbl = 'mb-1 block text-xs font-medium text-slate-600'
 export const btnPrimary =
   'inline-flex items-center justify-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 active:bg-red-800 disabled:opacity-50'
@@ -19,12 +19,18 @@ export const hoje = () => {
   return `${d.getFullYear()}-${m}-${dia}`
 }
 
+export const nomeMesAtual = () => {
+  const d = new Date()
+  const nome = d.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })
+  return nome.charAt(0).toUpperCase() + nome.slice(1)
+}
+
 export const brl = (n: number) =>
   (n || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 
 export const fmtData = (iso: string) => {
   if (!iso) return ''
-  const [y, m, d] = iso.split('-')
+  const [, m, d] = iso.split('-')
   return `${d}/${m}`
 }
 
@@ -38,7 +44,7 @@ export const norm = (s: string) =>
   (s || '')
     .toLowerCase()
     .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
+    .replace(/[\u0300-\u036f]/g, '')
     .replace(/\s+/g, ' ')
     .trim()
 
@@ -107,9 +113,9 @@ function palavra(p: string): string {
   if (MAPA_FIXO[l]) r = MAPA_FIXO[l]
   else if (/^\d+mm$/.test(l)) r = l
   else if (MINUSCULAS.has(l)) r = l
-  else if (/^[a-z](\.[a-z])+$/.test(l)) r = l.toUpperCase() // c.i.
+  else if (/^[a-z](\.[a-z])+$/.test(l)) r = l.toUpperCase()
   else if (SIGLAS.has(l) || l.length === 1) r = l.toUpperCase()
-  else if (/\d/.test(l)) r = l.toUpperCase() // s24, a54, x6, 5g, 4g, 128gb
+  else if (/\d/.test(l)) r = l.toUpperCase()
   else r = l.charAt(0).toUpperCase() + l.slice(1)
   return pre + r + pos
 }
@@ -119,8 +125,8 @@ export function padronizarModelo(texto: string): string {
   const t = (texto || '').trim().replace(/\s+/g, ' ')
   if (!t) return ''
   return t
-    .split(/(\s|\/|-|\+)/)
-    .map((p) => (/^(\s|\/|-|\+)$/.test(p) ? p : palavra(p)))
+    .split(/(\s|\/|\-|\+)/)
+    .map((p) => (/^(\s|\/|\-|\+)$/.test(p) ? p : palavra(p)))
     .join('')
 }
 
@@ -139,7 +145,8 @@ export function buscarPreco(precos: Preco[], tipo: string, marca: string, modelo
   const t = norm(tipo)
   const cands = precos.filter((p) => norm(p.tipo) === t)
   const bate = (nome: string) => variantes(nome).some((v) => alvo.includes(v))
-  const preferirMarca = (lista: Preco[]) => lista.find((p) => norm(p.marca) === norm(marca)) || lista[0]
+  const preferirMarca = (lista: Preco[]) =>
+    norm(marca) === 'outros' ? lista[0] : lista.find((p) => norm(p.marca) === norm(marca)) || lista[0]
   const exatos = cands.filter((p) => bate(p.modelo))
   if (exatos.length) return preferirMarca(exatos)
   const alias = cands.filter((p) => p.modelo.split('/').some((parte) => bate(baseDoNome(parte))))
@@ -161,4 +168,49 @@ export function servicosDoTipo(tipo: string): string[] {
 }
 
 export const nomeAparelho = (s: { marca: string; modelo: string }) =>
-  s.marca && norm(s.marca) !== 'apple' && !norm(s.modelo).includes(norm(s.marca)) ? `${s.marca} ${s.modelo}` : s.modelo
+  s.marca && norm(s.marca) !== 'apple' && norm(s.marca) !== 'outros' && !norm(s.modelo).includes(norm(s.marca))
+    ? `${s.marca} ${s.modelo}`
+    : s.modelo
+
+export function formatarMensagemCobranca(
+  clienteNome: string,
+  itens: Servico[],
+  cfg: MasterConfig = MASTER_CONFIG_PADRAO
+): string {
+  const aplicarVars = (tpl: string, vars: Record<string, string>) =>
+    Object.entries(vars).reduce((acc, [k, v]) => acc.split(`{${k}}`).join(v), tpl)
+
+  const cabecalho = aplicarVars(cfg.whatsCabecalho, {
+    cliente: clienteNome,
+    loja: cfg.nomeLoja,
+  })
+
+  const linhas = [...itens]
+    .sort((a, b) => a.dataEntrada.localeCompare(b.dataEntrada))
+    .map((s, i) =>
+      aplicarVars(cfg.whatsLinha, {
+        numero: String(i + 1),
+        data: fmtData(s.dataEntrada),
+        aparelho: nomeAparelho(s),
+        servico: s.servico,
+        valor: brl(s.valor),
+        cliente: clienteNome,
+        loja: cfg.nomeLoja,
+      })
+    )
+
+  const totalFmt = brl(soma(itens.map((s) => s.valor)))
+  const totalLinha = aplicarVars(cfg.whatsTotal, {
+    total: totalFmt,
+    cliente: clienteNome,
+    loja: cfg.nomeLoja,
+  })
+
+  const rodape = aplicarVars(cfg.whatsRodape, {
+    cliente: clienteNome,
+    loja: cfg.nomeLoja,
+    total: totalFmt,
+  })
+
+  return [cabecalho, '', ...linhas, '', totalLinha, '', rodape].join('\n')
+}
