@@ -1,7 +1,7 @@
 import { Preco, SERVICO_CHAVE, SERVICOS_POR_TIPO, PrecoKey, MASTER_CONFIG_PADRAO, MasterConfig, Servico } from '../types'
 
 export const inp =
-  'w-full min-w-0 max-w-full appearance-none rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100'
+  'w-full min-w-0 max-w-full appearance-none rounded-lg border border-slate-300 bg-white px-3 py-2 text-base sm:text-sm focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100'
 export const lbl = 'mb-1 block text-xs font-medium text-slate-600'
 export const btnPrimary =
   'inline-flex items-center justify-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 active:bg-red-800 disabled:opacity-50'
