@@ -30,7 +30,18 @@ export function useTable<T extends { id: string }>(modo: Modo, tabela: Tabela, s
 
     carregar(true)
 
-    // Escuta alterações em tempo real quando o modo estiver conectado ao Supabase
+    // Recarrega silenciosamente quando você volta para a aba ou desbloqueia o celular
+    const aoVoltarParaTela = () => {
+      if (document.visibilityState === 'visible') {
+        carregar(false)
+      }
+    }
+    const aoFocarJanela = () => carregar(false)
+
+    document.addEventListener('visibilitychange', aoVoltarParaTela)
+    window.addEventListener('focus', aoFocarJanela)
+
+    // Escuta alterações em tempo real enquanto a tela está aberta
     const canal =
       modo === 'supabase' && supabase
         ? supabase
@@ -47,6 +58,8 @@ export function useTable<T extends { id: string }>(modo: Modo, tabela: Tabela, s
 
     return () => {
       ativo = false
+      document.removeEventListener('visibilitychange', aoVoltarParaTela)
+      window.removeEventListener('focus', aoFocarJanela)
       if (canal && supabase) {
         supabase.removeChannel(canal)
       }
