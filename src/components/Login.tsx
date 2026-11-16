@@ -16,7 +16,7 @@ function lerConfigLocal(): MasterConfig {
 
 export default function Login({ onLocal }: { onLocal: () => void }) {
   const [cfg] = useState<MasterConfig>(lerConfigLocal)
-  const [email, setEmail] = useState('')
+  const [usuario, setUsuario] = useState('')
   const [senha, setSenha] = useState('')
   const [erro, setErro] = useState('')
   const [carregando, setCarregando] = useState(false)
@@ -26,9 +26,13 @@ export default function Login({ onLocal }: { onLocal: () => void }) {
     if (!supabase) return
     setErro('')
     setCarregando(true)
-    const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password: senha })
+
+    const limpo = usuario.trim().toLowerCase()
+    const emailFormatado = limpo.includes('@') ? limpo : `${limpo}@iphoncel.local`
+
+    const { error } = await supabase.auth.signInWithPassword({ email: emailFormatado, password: senha })
     setCarregando(false)
-    if (error) setErro('E-mail ou senha incorretos.')
+    if (error) setErro('Usuário ou senha incorretos.')
   }
 
   return (
@@ -52,14 +56,15 @@ export default function Login({ onLocal }: { onLocal: () => void }) {
 
         <form onSubmit={entrar} className="space-y-3">
           <div>
-            <label className={lbl}>E-mail</label>
+            <label className={lbl}>Usuário</label>
             <input
-              type="email"
+              type="text"
               required
               className={inp}
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              autoComplete="email"
+              value={usuario}
+              onChange={(e) => setUsuario(e.target.value)}
+              autoComplete="username"
+              autoCapitalize="none"
             />
           </div>
           <div>
