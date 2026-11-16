@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Modo, Tabela, listAll, saveMany as dbSaveMany, saveRow, deleteRow } from './db'
+import { supabase } from './supabase'
 
 export function useTable<T extends { id: string }>(modo: Modo, tabela: Tabela, seed?: () => T[]) {
   const [items, setItems] = useState<T[]>([])
@@ -7,24 +8,48 @@ export function useTable<T extends { id: string }>(modo: Modo, tabela: Tabela, s
 
   useEffect(() => {
     let ativo = true
-    ;(async () => {
-      setLoading(true)
+
+    const carregar = async (mostrarLoading = false) => {
+      if (mostrarLoading) setLoading(true)
       try {
         let rows = await listAll<T>(modo, tabela)
-        if (rows.length === 0 && seed) {
+        if (rows.length === 0 && seed && mostrarLoading) {
           rows = seed()
           await dbSaveMany(modo, tabela, rows)
         }
         if (ativo) setItems(rows)
       } catch (e: any) {
         console.error(e)
-        alert(`Erro ao carregar "${tabela}": ${e?.message || e}`)
+        if (mostrarLoading) {
+          alert(`Erro ao carregar "${tabela}": ${e?.message || e}`)
+        }
       } finally {
-        if (ativo) setLoading(false)
+        if (ativo && mostrarLoading) setLoading(false)
       }
-    })()
+    }
+
+    carregar(true)
+
+    // Escuta alterações em tempo real quando o modo estiver conectado ao Supabase
+    const canal =
+      modo === 'supabase' && supabase
+        ? supabase
+            .channel(`realtime-${tabela}-${Math.random().toString(36).slice(2)}`)
+            .on(
+              'postgres_changes',
+              { event: '*', schema: 'public', table: tabela },
+              () => {
+                carregar(false)
+              }
+            )
+            .subscribe()
+        : null
+
     return () => {
       ativo = false
+      if (canal && supabase) {
+        supabase.removeChannel(canal)
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [modo, tabela])
