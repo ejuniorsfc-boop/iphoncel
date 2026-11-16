@@ -151,12 +151,12 @@ export default function Financeiro({ servicos, pedidos }: { servicos: Servico[];
   }, [svPagosNoPeriodo, svEntradas, pd, ini, fim])
 
   const periodos = useMemo(() => {
-    if (dias === 0) return [] as { label: string; fat: number; custo: number; vol: number }[]
-    let buckets: { label: string; fat: number; custo: number; vol: number }[]
+    if (dias === 0) return [] as { label: string; fat: number; custo: number; vol: number; exec: number }[]
+    let buckets: { label: string; fat: number; custo: number; vol: number; exec: number }[]
     let idx: (d: string) => number
     if (dias <= 62) {
       const n = Math.ceil(dias / 7)
-      buckets = Array.from({ length: n }, (_, i) => ({ label: `Sem ${i + 1}`, fat: 0, custo: 0, vol: 0 }))
+      buckets = Array.from({ length: n }, (_, i) => ({ label: `Sem ${i + 1}`, fat: 0, custo: 0, vol: 0, exec: 0 }))
       idx = (d) => Math.floor(diffDias(rs, d) / 7)
     } else {
       const meses: string[] = []
@@ -167,7 +167,7 @@ export default function Financeiro({ servicos, pedidos }: { servicos: Servico[];
         const [y, m] = cur.split('-').map(Number)
         cur = m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`
       }
-      buckets = meses.map((m) => ({ label: `${m.slice(5)}/${m.slice(2, 4)}`, fat: 0, custo: 0, vol: 0 }))
+      buckets = meses.map((m) => ({ label: `${m.slice(5)}/${m.slice(2, 4)}`, fat: 0, custo: 0, vol: 0, exec: 0 }))
       idx = (d) => meses.indexOf(d.slice(0, 7))
     }
     svPagosNoPeriodo.forEach((s) => {
@@ -177,12 +177,17 @@ export default function Financeiro({ servicos, pedidos }: { servicos: Servico[];
         b.vol += 1
       }
     })
+    // serviços executados = aparelhos que entraram no laboratório, pela data de entrada
+    svEntradas.forEach((s) => {
+      const b = buckets[idx(s.dataEntrada)]
+      if (b) b.exec += 1
+    })
     pd.forEach((p) => {
       const b = buckets[idx(p.data)]
       if (b) b.custo += p.valor
     })
     return buckets
-  }, [svPagosNoPeriodo, pd, rs, re, dias])
+  }, [svPagosNoPeriodo, svEntradas, pd, rs, re, dias])
   const semanal = dias <= 62
 
   // Evolução diária ACUMULADA do faturamento recebido (regime de caixa pela data de pagamento)
@@ -350,10 +355,10 @@ export default function Financeiro({ servicos, pedidos }: { servicos: Servico[];
           />
         </section>
         <section className={card}>
-          <h3 className="mb-2 font-bold text-slate-900">Serviços pagos por {semanal ? 'semana' : 'mês'}</h3>
+          <h3 className="mb-2 font-bold text-slate-900">Serviços executados por {semanal ? 'semana' : 'mês'}</h3>
           <BarChart
-            data={periodos.map((s) => ({ label: s.label, values: [s.vol] }))}
-            series={[{ name: 'Pagamentos', color: COR_SECUNDARIA }]}
+            data={periodos.map((s) => ({ label: s.label, values: [s.exec] }))}
+            series={[{ name: 'Serviços executados', color: COR_SECUNDARIA }]}
             fmt={fmtNum}
           />
         </section>

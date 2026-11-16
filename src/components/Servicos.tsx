@@ -48,6 +48,7 @@ import {
   intervaloSemanaAtual,
   padronizarModelo,
   buscarPreco,
+  modeloCombina,
   valorAuto,
   servicosDoTipo,
   formatarMensagemCobranca,
@@ -121,6 +122,8 @@ function AutoCompleteInput({
   placeholder,
   className = '',
   mostrarLimpar = false,
+  filtrar = true,
+  onBlurValor,
 }: {
   value: string
   onChange: (val: string) => void
@@ -129,6 +132,8 @@ function AutoCompleteInput({
   placeholder?: string
   className?: string
   mostrarLimpar?: boolean
+  filtrar?: boolean
+  onBlurValor?: (val: string) => void
 }) {
   const [aberto, setAberto] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -144,10 +149,11 @@ function AutoCompleteInput({
   }, [])
 
   const filtradas = useMemo(() => {
+    if (!filtrar) return sugestoes
     const q = norm(value)
     if (!q) return sugestoes
     return sugestoes.filter((s) => norm(s.valor).includes(q) || (s.subtitulo && norm(s.subtitulo).includes(q)))
-  }, [sugestoes, value])
+  }, [sugestoes, value, filtrar])
 
   return (
     <div ref={containerRef} className={`relative ${className}`}>
@@ -156,6 +162,7 @@ function AutoCompleteInput({
           className={`${inp} ${mostrarLimpar && value ? 'pr-14' : 'pr-8'}`}
           placeholder={placeholder}
           value={value}
+          onBlur={(e) => onBlurValor?.(e.target.value)}
           onFocus={() => setAberto(true)}
           onClick={() => setAberto(true)}
           onChange={(e) => {
@@ -794,6 +801,13 @@ export default function Servicos({
             }
           })
 
+          const sugestoesModelos: SugestaoItem[] = precos
+            .filter((p) => norm(p.tipo) === norm(a.tipo) && (norm(a.marca) === 'outros' || norm(p.marca) === norm(a.marca)))
+            .filter((p) => modeloCombina(p.modelo, a.modelo))
+            .sort((x, y) => x.modelo.localeCompare(y.modelo, 'pt-BR', { numeric: true }))
+            .slice(0, 60)
+            .map((p) => ({ valor: padronizarModelo(p.modelo) }))
+
           return (
             <section key={a.key} className={card}>
               <div className="mb-3 flex items-center justify-between">
@@ -834,12 +848,14 @@ export default function Servicos({
                   <label className={lbl}>
                     Modelo {preco && <span className="text-emerald-600">· encontrado na tabela</span>}
                   </label>
-                  <input
-                    className={inp}
-                    placeholder="Ex: iphone 13 pro max"
+                  <AutoCompleteInput
+                    placeholder="Clique ou digite o modelo / código (ex: iphone 13, A1566, serie 6)"
                     value={a.modelo}
-                    onChange={(e) => setAp(a.key, { modelo: e.target.value })}
-                    onBlur={(e) => setAp(a.key, { modelo: padronizarModelo(e.target.value) })}
+                    sugestoes={sugestoesModelos}
+                    filtrar={false}
+                    onChange={(val) => setAp(a.key, { modelo: val })}
+                    onSelect={(item) => setAp(a.key, { modelo: item.valor })}
+                    onBlurValor={(val) => setAp(a.key, { modelo: padronizarModelo(val) })}
                   />
                 </div>
               </div>

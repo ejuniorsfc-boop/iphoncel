@@ -39,7 +39,9 @@ export default function Inicio({
 
   const faturamento = soma(svEntradasMes.map((s) => s.valor))
   const recebido = soma(svPagosMes.map((s) => s.valor))
-  const aReceber = soma(svEntradasMes.filter((s) => s.statusFin === 'Pendente').map((s) => s.valor))
+  // total em aberto de TODOS os meses (igual ao Financeiro)
+  const pendentesGeral = servicos.filter((s) => s.statusFin === 'Pendente')
+  const aReceber = soma(pendentesGeral.map((s) => s.valor))
   const insumos = soma(pdMes.map((p) => p.valor))
   const saldoLiquido = recebido - insumos
 
@@ -127,10 +129,10 @@ export default function Inicio({
         </div>
 
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-xs font-medium text-slate-500">A receber (entradas do mês)</p>
+          <p className="text-xs font-medium text-slate-500">A receber (total em aberto)</p>
           <p className="mt-1 text-xl font-extrabold text-amber-600">{brl(aReceber)}</p>
           <p className="mt-1 text-[11px] text-slate-400">
-            {svEntradasMes.filter((s) => s.statusFin === 'Pendente').length} pendente(s)
+            {pendentesGeral.length} aparelho(s) em aberto
           </p>
         </div>
 

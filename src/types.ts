@@ -15,7 +15,7 @@ export const SERVICOS_POR_TIPO: Record<Tipo, string[]> = {
     'Tampa Traseira – Troca Completa',
   ],
   Tablet: ['Troca de Vidro'],
-  Relógio: ['Vidro S/ Touch', 'Vidro C/ Touch'],
+  Relógio: ['Troca de Vidro'],
 }
 
 export type PrecoKey =

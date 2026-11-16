@@ -149,6 +149,23 @@ const variantes = (s: string) => {
 }
 const baseDoNome = (s: string) => s.split(' - ')[0]
 
+/** Texto de busca: sem acento/maiúscula, "series"="serie", "44mm"="44 mm", separadores viram espaço. */
+export const normBusca = (s: string) =>
+  norm(s)
+    .replace(/\bseries\b/g, 'serie')
+    .replace(/(\d)\s*mm\b/g, '$1 mm')
+    .replace(/[\/\-–_,.()+]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+/** Todas as palavras digitadas precisam começar alguma palavra do nome (ex.: "a1566" acha "IPAD AIR 2 - A1566 / A1567"). */
+export function modeloCombina(nome: string, busca: string): boolean {
+  const q = normBusca(busca)
+  if (!q) return true
+  const palavras = normBusca(nome).split(' ')
+  return q.split(' ').every((t) => palavras.some((p) => p.startsWith(t)))
+}
+
 /** Procura o preço do modelo digitado (ignora maiúsculas/acentos e entende nomes agrupados com "/"). */
 export function buscarPreco(precos: Preco[], tipo: string, marca: string, modelo: string): Preco | undefined {
   const alvo = variantes(modelo)
@@ -161,13 +178,23 @@ export function buscarPreco(precos: Preco[], tipo: string, marca: string, modelo
   const exatos = cands.filter((p) => bate(p.modelo))
   if (exatos.length) return preferirMarca(exatos)
   const alias = cands.filter((p) => p.modelo.split('/').some((parte) => bate(baseDoNome(parte))))
-  return alias.length ? preferirMarca(alias) : undefined
+  if (alias.length) return preferirMarca(alias)
+  // busca por palavras/códigos soltos (ex.: "A1566", "serie 6 44mm"): só aceita se identificar um único modelo
+  const parciais = cands.filter((p) => modeloCombina(p.modelo, modelo))
+  const porMarca = norm(marca) === 'outros' ? parciais : parciais.filter((p) => norm(p.marca) === norm(marca))
+  const lista = porMarca.length ? porMarca : parciais
+  return lista.length === 1 ? lista[0] : undefined
 }
 
 export function valorAuto(p: Preco | undefined, servico: string): number | undefined {
   if (!p) return undefined
   const par = Object.entries(SERVICO_CHAVE).find(([nome]) => norm(nome) === norm(servico))
   if (!par) return undefined
+  // Relógio: "Troca de Vidro" puxa o valor existente (sem ou com touch), conforme a tabela do modelo
+  if (p.tipo === 'Relógio' && norm(servico) === 'troca de vidro') {
+    const rv = p.vidroSemTouch ?? p.vidroComTouch
+    return rv == null ? undefined : rv
+  }
   const v = p[par[1] as PrecoKey]
   return v == null ? undefined : v
 }
