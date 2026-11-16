@@ -1,5 +1,20 @@
-import { useEffect, useMemo, useState } from 'react'
-import { ArrowLeft, Check, ClipboardCopy, MessageCircle, Pencil, Plus, Trash2, Users, X } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import {
+  ArrowLeft,
+  Calendar,
+  Check,
+  ChevronDown,
+  ClipboardCopy,
+  ExternalLink,
+  MessageCircle,
+  Pencil,
+  Plus,
+  Send,
+  Trash2,
+  Users,
+  Wallet,
+  X,
+} from 'lucide-react'
 import {
   Servico,
   Lojista,
@@ -24,10 +39,13 @@ import {
   lbl,
   copiar,
   soma,
+  formatarMensagemPronto,
+  nomeAparelho,
   btnPrimary,
   btnGhost,
   card,
   ultimoDiaDoMes,
+  intervaloSemanaAtual,
   padronizarModelo,
   buscarPreco,
   valorAuto,
@@ -43,6 +61,8 @@ interface Props {
   abrirNovoDireto?: boolean
   statusInicialFiltro?: StatusBancada | ''
   onConsumiuAtalho?: () => void
+  onSaveMany?: (itens: Servico[]) => void
+  abrirPendenciasDireto?: boolean
   onSave: (s: Servico) => void
   onRemove: (id: string) => void
   onSaveLojista: (l: Lojista) => void
@@ -61,6 +81,8 @@ type Aparelho = {
   statusFin: StatusFin
   dataPagamento: string
 }
+
+type ModoPeriodo = 'mes_atual' | 'semana_atual' | 'todo_periodo' | 'personalizado'
 
 const linhaVazia = (servico = ''): Linha => ({ id: uid(), servico, valor: '', manual: false })
 const aparelhoVazio = (): Aparelho => ({
@@ -81,6 +103,115 @@ const corBancada: Record<StatusBancada, string> = {
   'Em andamento': 'bg-amber-100 text-amber-800',
   Pronto: 'bg-sky-100 text-sky-800',
   Entregue: 'bg-emerald-100 text-emerald-800',
+}
+
+// ---------------------------------------------------------------------------
+// Componente de Autocomplete Customizado (abre ao clicar ou digitar)
+// ---------------------------------------------------------------------------
+interface SugestaoItem {
+  valor: string
+  subtitulo?: string
+}
+
+function AutoCompleteInput({
+  value,
+  onChange,
+  onSelect,
+  sugestoes,
+  placeholder,
+  className = '',
+  mostrarLimpar = false,
+}: {
+  value: string
+  onChange: (val: string) => void
+  onSelect?: (item: SugestaoItem) => void
+  sugestoes: SugestaoItem[]
+  placeholder?: string
+  className?: string
+  mostrarLimpar?: boolean
+}) {
+  const [aberto, setAberto] = useState(false)
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setAberto(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  const filtradas = useMemo(() => {
+    const q = norm(value)
+    if (!q) return sugestoes
+    return sugestoes.filter((s) => norm(s.valor).includes(q) || (s.subtitulo && norm(s.subtitulo).includes(q)))
+  }, [sugestoes, value])
+
+  return (
+    <div ref={containerRef} className={`relative ${className}`}>
+      <div className="relative">
+        <input
+          className={`${inp} ${mostrarLimpar && value ? 'pr-14' : 'pr-8'}`}
+          placeholder={placeholder}
+          value={value}
+          onFocus={() => setAberto(true)}
+          onClick={() => setAberto(true)}
+          onChange={(e) => {
+            onChange(e.target.value)
+            setAberto(true)
+          }}
+        />
+        <div className="absolute right-2 top-2 flex items-center gap-0.5">
+          {mostrarLimpar && value && (
+            <button
+              type="button"
+              onClick={() => {
+                onChange('')
+                setAberto(true)
+              }}
+              className="rounded p-0.5 text-slate-400 hover:text-slate-700"
+              title="Limpar"
+            >
+              <X size={15} />
+            </button>
+          )}
+          <button
+            type="button"
+            tabIndex={-1}
+            onClick={() => setAberto((prev) => !prev)}
+            className="rounded p-0.5 text-slate-400 hover:text-slate-700"
+            aria-label="Mostrar opções"
+          >
+            <ChevronDown size={15} />
+          </button>
+        </div>
+      </div>
+
+      {aberto && filtradas.length > 0 && (
+        <ul className="absolute left-0 right-0 z-30 mt-1 max-h-56 overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-xl">
+          {filtradas.map((item, idx) => (
+            <li key={`${item.valor}-${idx}`}>
+              <button
+                type="button"
+                onMouseDown={(e) => {
+                  e.preventDefault()
+                  onChange(item.valor)
+                  onSelect?.(item)
+                  setAberto(false)
+                }}
+                className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-red-50"
+              >
+                <span className="truncate font-medium text-slate-900">{item.valor}</span>
+                {item.subtitulo && <span className="shrink-0 text-xs text-slate-400">{item.subtitulo}</span>}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
 }
 
 // ---------------------------------------------------------------------------
@@ -226,6 +357,8 @@ export default function Servicos({
   abrirNovoDireto,
   statusInicialFiltro,
   onConsumiuAtalho,
+  onSaveMany,
+  abrirPendenciasDireto,
   onSave,
   onRemove,
   onSaveLojista,
@@ -233,7 +366,23 @@ export default function Servicos({
 }: Props) {
   const [view, setView] = useState<'lista' | 'form'>('lista')
   const [modalClientes, setModalClientes] = useState(false)
-  const [copiado, setCopiado] = useState(false)
+
+  // Pop-ups de confirmação (Status, Pagamento e Cobrança WhatsApp)
+  const [modalStatusServico, setModalStatusServico] = useState<Servico | null>(null)
+  const [statusSelecionado, setStatusSelecionado] = useState<StatusBancada>('Em andamento')
+
+  const [modalPagoServico, setModalPagoServico] = useState<Servico | null>(null)
+  const [dataPagoSelecionada, setDataPagoSelecionada] = useState<string>(hoje())
+
+  const [modalCobrancaAberto, setModalCobrancaAberto] = useState(false)
+  const [cobrancaGeral, setCobrancaGeral] = useState(false) // true = cobrança aberta pela visão de pendências (todas as datas)
+  const [modalPendencias, setModalPendencias] = useState(false)
+  const [baixaLote, setBaixaLote] = useState<{ cliente: string; itens: Servico[] } | null>(null)
+  const [dataBaixaLote, setDataBaixaLote] = useState<string>(hoje())
+  const [avisoPronto, setAvisoPronto] = useState<Servico | null>(null)
+  const [clienteCobrancaSel, setClienteCobrancaSel] = useState<string>('')
+  const [mensagemEditada, setMensagemEditada] = useState<string>('')
+  const [copiadoModal, setCopiadoModal] = useState(false)
 
   // formulário
   const [editId, setEditId] = useState<string | null>(null)
@@ -244,11 +393,29 @@ export default function Servicos({
 
   // filtros
   const mesAtual = hoje().slice(0, 7)
-  const [ini, setIni] = useState(`${mesAtual}-01`)
-  const [fim, setFim] = useState(`${mesAtual}-${String(ultimoDiaDoMes(mesAtual)).padStart(2, '0')}`)
+  const [modoPeriodo, setModoPeriodo] = useState<ModoPeriodo>('mes_atual')
+  const [iniCustom, setIniCustom] = useState(`${mesAtual}-01`)
+  const [fimCustom, setFimCustom] = useState(`${mesAtual}-${String(ultimoDiaDoMes(mesAtual)).padStart(2, '0')}`)
   const [fCli, setFCli] = useState('')
   const [fBanc, setFBanc] = useState('')
   const [fFin, setFFin] = useState('')
+
+  const { ini, fim } = useMemo(() => {
+    if (modoPeriodo === 'mes_atual') {
+      const m = hoje().slice(0, 7)
+      return {
+        ini: `${m}-01`,
+        fim: `${m}-${String(ultimoDiaDoMes(m)).padStart(2, '0')}`,
+      }
+    }
+    if (modoPeriodo === 'semana_atual') {
+      return intervaloSemanaAtual()
+    }
+    if (modoPeriodo === 'todo_periodo') {
+      return { ini: '', fim: '' }
+    }
+    return { ini: iniCustom, fim: fimCustom }
+  }, [modoPeriodo, iniCustom, fimCustom])
 
   useEffect(() => {
     if (abrirNovoDireto) {
@@ -260,6 +427,20 @@ export default function Servicos({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [abrirNovoDireto, statusInicialFiltro])
+
+  useEffect(() => {
+    if (abrirPendenciasDireto) {
+      setModalPendencias(true)
+      onConsumiuAtalho?.()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [abrirPendenciasDireto])
+
+  useEffect(() => {
+    if (!avisoPronto) return
+    const t = setTimeout(() => setAvisoPronto(null), 15000)
+    return () => clearTimeout(t)
+  }, [avisoPronto])
 
   // preenche valores automaticamente (linhas que o usuário não digitou manualmente)
   useEffect(() => {
@@ -301,6 +482,28 @@ export default function Servicos({
     const achado = lojistas.find((l) => norm(l.nome) === norm(nome))
     if (achado) setTelefone(achado.telefone)
   }
+
+  // Sugestões de clientes cadastrados (combina cadastro de lojistas + nomes históricos dos serviços)
+  const sugestoesClientesForm = useMemo<SugestaoItem[]>(() => {
+    const mapa = new Map<string, SugestaoItem>()
+    lojistas.forEach((l) => {
+      if (l.nome.trim()) {
+        mapa.set(norm(l.nome), { valor: l.nome, subtitulo: l.telefone || undefined })
+      }
+    })
+    servicos.forEach((s) => {
+      const k = norm(s.lojista)
+      if (s.lojista.trim() && !mapa.has(k)) {
+        mapa.set(k, { valor: s.lojista, subtitulo: s.telefone || undefined })
+      }
+    })
+    return [...mapa.values()].sort((a, b) => a.valor.localeCompare(b.valor, 'pt-BR'))
+  }, [lojistas, servicos])
+
+  const sugestoesClientesFiltro = useMemo<SugestaoItem[]>(() => {
+    const nomes = [...new Set([...lojistas.map((l) => l.nome), ...servicos.map((s) => s.lojista)].filter(Boolean))]
+    return nomes.sort((a, b) => a.localeCompare(b, 'pt-BR')).map((n) => ({ valor: n }))
+  }, [lojistas, servicos])
 
   function abrirNovo() {
     setEditId(null)
@@ -383,14 +586,6 @@ export default function Servicos({
     window.scrollTo({ top: 0 })
   }
 
-  const proximoStatus = (s: StatusBancada): StatusBancada =>
-    STATUS_BANCADA[(STATUS_BANCADA.indexOf(s) + 1) % STATUS_BANCADA.length]
-
-  const nomesClientes = useMemo(
-    () => [...new Set(servicos.map((s) => s.lojista))].sort((a, b) => a.localeCompare(b, 'pt-BR')),
-    [servicos]
-  )
-
   const lista = useMemo(
     () =>
       servicos
@@ -407,15 +602,131 @@ export default function Servicos({
   )
   const pendentesLista = lista.filter((s) => s.statusFin === 'Pendente')
 
-  async function copiarCobranca() {
-    const grupos = new Map<string, Servico[]>()
-    pendentesLista.forEach((s) => grupos.set(s.lojista, [...(grupos.get(s.lojista) || []), s]))
-    const blocos = [...grupos.entries()].map(([nome, itens]) => formatarMensagemCobranca(nome, itens, config))
-    const ok = await copiar(blocos.join('\n\n————————\n\n'))
-    if (ok) {
-      setCopiado(true)
-      setTimeout(() => setCopiado(false), 2500)
+  // Agrupamento dos pendentes por cliente para o pop-up de Cobrança WhatsApp
+  const agruparPendentes = (itens: Servico[]) => {
+    const mapa = new Map<string, { cliente: string; telefone: string; itens: Servico[] }>()
+    itens.forEach((s) => {
+      const k = norm(s.lojista)
+      const cad = lojistas.find((l) => norm(l.nome) === k)
+      const atual = mapa.get(k)
+      if (atual) {
+        atual.itens.push(s)
+        if (!atual.telefone && (s.telefone || cad?.telefone)) {
+          atual.telefone = s.telefone || cad?.telefone || ''
+        }
+      } else {
+        mapa.set(k, {
+          cliente: s.lojista,
+          telefone: s.telefone || cad?.telefone || '',
+          itens: [s],
+        })
+      }
+    })
+    return [...mapa.entries()].map(([key, val]) => ({ key, ...val }))
+  }
+  const gruposFiltro = useMemo(
+    () => agruparPendentes(pendentesLista),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [pendentesLista, lojistas]
+  )
+  // Todas as pendências, independente do período/filtros, agrupadas por cliente (maior dívida primeiro)
+  const gruposGeral = useMemo(
+    () =>
+      agruparPendentes(servicos.filter((s) => s.statusFin === 'Pendente'))
+        .map((g) => ({ ...g, total: soma(g.itens.map((i) => i.valor)) }))
+        .sort((a, b) => b.total - a.total),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [servicos, lojistas]
+  )
+  const totalGeralPendente = soma(gruposGeral.map((g) => g.total))
+  const gruposPendentes = cobrancaGeral ? gruposGeral : gruposFiltro
+
+  const telefoneDe = (s: Servico) =>
+    s.telefone || lojistas.find((l) => norm(l.nome) === norm(s.lojista))?.telefone || ''
+
+  function abrirCobrancaCliente(key: string) {
+    const g = gruposGeral.find((x) => x.key === key)
+    if (!g) return
+    setCobrancaGeral(true)
+    setClienteCobrancaSel(g.key)
+    setMensagemEditada(formatarMensagemCobranca(g.cliente, g.itens, config))
+    setCopiadoModal(false)
+    setModalCobrancaAberto(true)
+  }
+
+  function abrirBaixaLote(cliente: string, itens: Servico[]) {
+    if (itens.length === 0) return
+    setBaixaLote({ cliente, itens })
+    setDataBaixaLote(hoje())
+  }
+
+  function confirmarBaixaLote() {
+    if (!baixaLote) return
+    const data = dataBaixaLote || hoje()
+    const atualizados = baixaLote.itens.map((s) => ({ ...s, statusFin: 'Pago' as StatusFin, dataPagamento: data }))
+    if (onSaveMany) onSaveMany(atualizados)
+    else atualizados.forEach((s) => onSave(s))
+    setBaixaLote(null)
+    setModalCobrancaAberto(false)
+  }
+
+  function abrirModalCobranca() {
+    if (gruposFiltro.length === 0) return
+    setCobrancaGeral(false)
+    const primeiro = gruposFiltro[0]
+    setClienteCobrancaSel(primeiro.key)
+    setMensagemEditada(formatarMensagemCobranca(primeiro.cliente, primeiro.itens, config))
+    setCopiadoModal(false)
+    setModalCobrancaAberto(true)
+  }
+
+  function trocarClienteCobranca(key: string) {
+    setClienteCobrancaSel(key)
+    setCopiadoModal(false)
+    if (key === '__todos__') {
+      const blocos = gruposPendentes.map((g) => formatarMensagemCobranca(g.cliente, g.itens, config))
+      setMensagemEditada(blocos.join('\n\n————————\n\n'))
+    } else {
+      const g = gruposPendentes.find((x) => x.key === key)
+      if (g) {
+        setMensagemEditada(formatarMensagemCobranca(g.cliente, g.itens, config))
+      }
     }
+  }
+
+  const grupoSelecionadoAtual = useMemo(
+    () => (clienteCobrancaSel === '__todos__' ? null : gruposPendentes.find((g) => g.key === clienteCobrancaSel) || null),
+    [clienteCobrancaSel, gruposPendentes]
+  )
+
+  function abrirPopupStatus(s: Servico) {
+    setModalStatusServico(s)
+    setStatusSelecionado(s.statusBancada)
+  }
+
+  function confirmarStatus() {
+    if (!modalStatusServico) return
+    const atualizado = { ...modalStatusServico, statusBancada: statusSelecionado }
+    onSave(atualizado)
+    if (statusSelecionado === 'Pronto' && modalStatusServico.statusBancada !== 'Pronto') {
+      setAvisoPronto({ ...atualizado, telefone: telefoneDe(atualizado) })
+    }
+    setModalStatusServico(null)
+  }
+
+  function abrirPopupPago(s: Servico) {
+    setModalPagoServico(s)
+    setDataPagoSelecionada(hoje())
+  }
+
+  function confirmarPago() {
+    if (!modalPagoServico) return
+    onSave({
+      ...modalPagoServico,
+      statusFin: 'Pago',
+      dataPagamento: dataPagoSelecionada || hoje(),
+    })
+    setModalPagoServico(null)
   }
 
   // =========================== PÁGINA DE CADASTRO ===========================
@@ -430,12 +741,6 @@ export default function Servicos({
           <h2 className="text-lg font-bold text-slate-900">{editId ? 'Editar serviço' : 'Novo serviço'}</h2>
         </div>
 
-        <datalist id="lista-clientes">
-          {lojistas.map((l) => (
-            <option key={l.id} value={l.nome} />
-          ))}
-        </datalist>
-
         <section className={card}>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <div className="min-w-0">
@@ -444,12 +749,12 @@ export default function Servicos({
             </div>
             <div className="min-w-0">
               <label className={lbl}>{config.labelCliente}</label>
-              <input
-                list="lista-clientes"
-                className={inp}
-                placeholder={`Nome do ${config.labelCliente.toLowerCase()}`}
+              <AutoCompleteInput
                 value={cliente}
-                onChange={(e) => mudarCliente(e.target.value)}
+                onChange={mudarCliente}
+                onSelect={(item) => mudarCliente(item.valor)}
+                sugestoes={sugestoesClientesForm}
+                placeholder={`Clique ou digite o ${config.labelCliente.toLowerCase()}`}
               />
             </div>
             <div className="min-w-0">
@@ -481,6 +786,14 @@ export default function Servicos({
         {aparelhos.map((a, idx) => {
           const preco = buscarPreco(precos, a.tipo, a.marca, a.modelo)
           const totalAp = soma(a.linhas.map((l) => num(l.valor)))
+          const sugestoesServicos: SugestaoItem[] = servicosDoTipo(a.tipo).map((srv) => {
+            const v = valorAuto(preco, srv)
+            return {
+              valor: srv,
+              subtitulo: v != null ? brl(v) : undefined,
+            }
+          })
+
           return (
             <section key={a.key} className={card}>
               <div className="mb-3 flex items-center justify-between">
@@ -531,12 +844,6 @@ export default function Servicos({
                 </div>
               </div>
 
-              <datalist id={`sv-${a.key}`}>
-                {servicosDoTipo(a.tipo).map((s) => (
-                  <option key={s} value={s} />
-                ))}
-              </datalist>
-
               <div className="mt-4">
                 <div className="mb-1 flex items-center justify-between">
                   <label className="text-xs font-medium text-slate-600">Serviço executado</label>
@@ -553,12 +860,13 @@ export default function Servicos({
                 <div className="space-y-2">
                   {a.linhas.map((l) => (
                     <div key={l.id} className="flex items-center gap-2">
-                      <input
-                        list={`sv-${a.key}`}
-                        className={`${inp} flex-1`}
-                        placeholder="Digite ou selecione o serviço"
+                      <AutoCompleteInput
+                        className="min-w-0 flex-1"
+                        placeholder="Clique ou digite o serviço"
                         value={l.servico}
-                        onChange={(e) => setLinha(a.key, l.id, { servico: e.target.value, manual: false })}
+                        sugestoes={sugestoesServicos}
+                        onChange={(val) => setLinha(a.key, l.id, { servico: val, manual: false })}
+                        onSelect={(item) => setLinha(a.key, l.id, { servico: item.valor, manual: false })}
                       />
                       <div className="relative w-28 shrink-0 sm:w-32">
                         <span className="pointer-events-none absolute left-3 top-2 text-sm text-slate-400">R$</span>
@@ -656,45 +964,42 @@ export default function Servicos({
         <button onClick={() => setModalClientes(true)} className={btnGhost}>
           <Users size={16} /> Gerenciar {config.labelCliente}s
         </button>
+        <button onClick={() => setModalPendencias(true)} className={btnGhost}>
+          <Wallet size={16} /> Pendências por {config.labelCliente.toLowerCase()}
+          {gruposGeral.length > 0 && (
+            <span className="rounded-full bg-rose-100 px-1.5 text-xs font-bold text-rose-800">{gruposGeral.length}</span>
+          )}
+        </button>
       </div>
 
       <section className={card}>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <div className="min-w-0">
-            <label className={lbl}>Data inicial</label>
-            <input type="date" className={inp} value={ini} onChange={(e) => setIni(e.target.value)} />
+            <label className={lbl}>Período</label>
+            <select
+              className={inp}
+              value={modoPeriodo}
+              onChange={(e) => setModoPeriodo(e.target.value as ModoPeriodo)}
+            >
+              <option value="mes_atual">Mês atual</option>
+              <option value="semana_atual">Semana atual</option>
+              <option value="todo_periodo">Todo o período</option>
+              <option value="personalizado">Personalizado</option>
+            </select>
           </div>
-          <div className="min-w-0">
-            <label className={lbl}>Data final</label>
-            <input type="date" className={inp} value={fim} onChange={(e) => setFim(e.target.value)} />
-          </div>
+
           <div className="min-w-0">
             <label className={lbl}>{config.labelCliente}</label>
-            <div className="relative">
-              <input
-                list="filtro-clientes-lista"
-                className={`${inp} ${fCli ? 'pr-8' : ''}`}
-                placeholder="Todos ou digite..."
-                value={fCli}
-                onChange={(e) => setFCli(e.target.value)}
-              />
-              {fCli && (
-                <button
-                  type="button"
-                  onClick={() => setFCli('')}
-                  className="absolute right-2 top-2 rounded p-0.5 text-slate-400 hover:text-slate-700"
-                  title="Limpar filtro"
-                >
-                  <X size={15} />
-                </button>
-              )}
-              <datalist id="filtro-clientes-lista">
-                {nomesClientes.map((n) => (
-                  <option key={n} value={n} />
-                ))}
-              </datalist>
-            </div>
+            <AutoCompleteInput
+              value={fCli}
+              onChange={setFCli}
+              onSelect={(item) => setFCli(item.valor)}
+              sugestoes={sugestoesClientesFiltro}
+              placeholder="Todos ou digite..."
+              mostrarLimpar
+            />
           </div>
+
           <div className="min-w-0">
             <label className={lbl}>{config.labelStatus}</label>
             <select className={inp} value={fBanc} onChange={(e) => setFBanc(e.target.value)}>
@@ -704,6 +1009,7 @@ export default function Servicos({
               ))}
             </select>
           </div>
+
           <div className="min-w-0">
             <label className={lbl}>Financeiro</label>
             <select className={inp} value={fFin} onChange={(e) => setFFin(e.target.value)}>
@@ -714,14 +1020,31 @@ export default function Servicos({
           </div>
         </div>
 
+        {modoPeriodo === 'personalizado' && (
+          <div className="mt-3 grid grid-cols-1 gap-3 rounded-xl border border-slate-200 bg-slate-50/70 p-3 sm:grid-cols-2">
+            <div className="min-w-0">
+              <label className={lbl}>Data inicial</label>
+              <input type="date" className={inp} value={iniCustom} onChange={(e) => setIniCustom(e.target.value)} />
+            </div>
+            <div className="min-w-0">
+              <label className={lbl}>Data final</label>
+              <input type="date" className={inp} value={fimCustom} onChange={(e) => setFimCustom(e.target.value)} />
+            </div>
+          </div>
+        )}
+
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
           <p className="text-sm text-slate-600">
             <b>{lista.length}</b> aparelho(s) · total <b>{brl(soma(lista.map((s) => s.valor)))}</b> · a receber{' '}
             <b className="text-amber-700">{brl(soma(pendentesLista.map((s) => s.valor)))}</b>
           </p>
-          <button className={btnGhost} onClick={copiarCobranca} disabled={pendentesLista.length === 0}>
-            {copiado ? <Check size={16} className="text-emerald-600" /> : <ClipboardCopy size={16} />}
-            {copiado ? 'Copiado!' : `Copiar Cobrança WhatsApp (${pendentesLista.length})`}
+          <button
+            className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-emerald-600 px-3.5 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+            onClick={abrirModalCobranca}
+            disabled={pendentesLista.length === 0}
+          >
+            <MessageCircle size={16} />
+            {`Cobrar no WhatsApp (${pendentesLista.length})`}
           </button>
         </div>
       </section>
@@ -774,26 +1097,37 @@ export default function Servicos({
 
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <button
-                onClick={() => onSave({ ...s, statusBancada: proximoStatus(s.statusBancada) })}
-                className={`rounded-full px-3 py-1 text-xs font-semibold ${corBancada[s.statusBancada]}`}
-                title="Clique para avançar o status"
+                onClick={() => abrirPopupStatus(s)}
+                className={`rounded-full px-3 py-1 text-xs font-semibold transition hover:opacity-90 ${corBancada[s.statusBancada]}`}
+                title="Clique para alterar o status"
               >
                 {s.statusBancada} ›
               </button>
               {s.statusFin === 'Pendente' ? (
                 <button
-                  onClick={() => onSave({ ...s, statusFin: 'Pago', dataPagamento: hoje() })}
+                  onClick={() => abrirPopupPago(s)}
                   className="inline-flex items-center gap-1 rounded-full bg-emerald-600 px-3 py-1 text-xs font-semibold text-white hover:bg-emerald-700"
                 >
                   <Check size={13} /> Marcar pago
                 </button>
               ) : (
                 <button
-                  onClick={() => onSave({ ...s, statusFin: 'Pendente', dataPagamento: '' })}
+                  onClick={() => confirm(`Marcar "${s.modelo}" (${s.lojista}) como Pendente novamente?`) && onSave({ ...s, statusFin: 'Pendente', dataPagamento: '' })}
                   className="rounded-full border border-slate-300 px-3 py-1 text-xs text-slate-600 hover:bg-slate-50"
                 >
                   Desfazer pagamento
                 </button>
+              )}
+              {s.statusBancada === 'Pronto' && whatsLink(telefoneDe(s)) && (
+                <a
+                  href={whatsLink(telefoneDe(s), formatarMensagemPronto(s, config))}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 rounded-full border border-emerald-300 px-3 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-50"
+                  title="Avisar o cliente que o aparelho está pronto"
+                >
+                  <MessageCircle size={13} /> Avisar pronto
+                </a>
               )}
               <span className="flex-1" />
               <button onClick={() => editar(s)} className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100" title="Editar">
@@ -810,6 +1144,393 @@ export default function Servicos({
           </article>
         ))}
       </section>
+
+      {/* POP-UP: Alterar Status do Aparelho */}
+      {modalStatusServico && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4"
+          onClick={() => setModalStatusServico(null)}
+        >
+          <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="text-base font-bold text-slate-900">Alterar {config.labelStatus}</h3>
+              <button
+                type="button"
+                onClick={() => setModalStatusServico(null)}
+                className="rounded-lg p-1 text-slate-400 hover:bg-slate-100"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="mb-4 rounded-xl bg-slate-50 p-3 text-xs text-slate-600">
+              <p className="font-semibold text-slate-900">{modalStatusServico.modelo}</p>
+              <p>
+                {modalStatusServico.lojista} · {modalStatusServico.servico}
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              {STATUS_BANCADA.map((st) => {
+                const ativo = statusSelecionado === st
+                return (
+                  <button
+                    key={st}
+                    type="button"
+                    onClick={() => setStatusSelecionado(st)}
+                    className={`flex w-full items-center justify-between rounded-xl border px-3.5 py-2.5 text-sm font-semibold transition ${
+                      ativo
+                        ? 'border-red-600 bg-red-50 text-red-700 ring-2 ring-red-100'
+                        : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                    }`}
+                  >
+                    <span className="flex items-center gap-2">
+                      <span className={`inline-block h-2.5 w-2.5 rounded-full ${corBancada[st].split(' ')[0]}`} />
+                      {st}
+                    </span>
+                    {ativo && <Check size={16} className="text-red-600" />}
+                  </button>
+                )
+              })}
+            </div>
+
+            <div className="mt-5 flex justify-end gap-2">
+              <button type="button" className={btnGhost} onClick={() => setModalStatusServico(null)}>
+                Cancelar
+              </button>
+              <button type="button" className={btnPrimary} onClick={confirmarStatus}>
+                <Check size={16} /> Confirmar status
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* POP-UP: Confirmar Pagamento com Data */}
+      {modalPagoServico && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4"
+          onClick={() => setModalPagoServico(null)}
+        >
+          <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="text-base font-bold text-slate-900">Confirmar Pagamento</h3>
+              <button
+                type="button"
+                onClick={() => setModalPagoServico(null)}
+                className="rounded-lg p-1 text-slate-400 hover:bg-slate-100"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50/60 p-3 text-xs text-slate-700">
+              <p className="font-bold text-slate-900">{modalPagoServico.modelo}</p>
+              <p>
+                {modalPagoServico.lojista} · {modalPagoServico.servico}
+              </p>
+              <p className="mt-1 text-sm font-extrabold text-emerald-700">{brl(modalPagoServico.valor)}</p>
+            </div>
+
+            <div>
+              <label className={lbl}>
+                <span className="inline-flex items-center gap-1">
+                  <Calendar size={13} /> Data em que o serviço foi pago
+                </span>
+              </label>
+              <input
+                type="date"
+                className={inp}
+                value={dataPagoSelecionada}
+                onChange={(e) => setDataPagoSelecionada(e.target.value)}
+              />
+              <p className="mt-1 text-[11px] text-slate-500">
+                O valor será contabilizado no financeiro referente ao mês desta data.
+              </p>
+            </div>
+
+            <div className="mt-5 flex justify-end gap-2">
+              <button type="button" className={btnGhost} onClick={() => setModalPagoServico(null)}>
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={confirmarPago}
+                className="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700"
+              >
+                <Check size={16} /> Confirmar pagamento
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* POP-UP: Conferência e Envio de Cobrança WhatsApp */}
+      {modalCobrancaAberto && (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/60 p-0 sm:items-center sm:p-4"
+          onClick={() => setModalCobrancaAberto(false)}
+        >
+          <div
+            className="flex max-h-[92vh] w-full max-w-lg flex-col rounded-t-2xl bg-white shadow-xl sm:rounded-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-slate-200 p-4">
+              <div className="flex items-center gap-2">
+                <MessageCircle size={20} className="text-emerald-600" />
+                <h3 className="text-base font-bold text-slate-900">Conferir Cobrança WhatsApp</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setModalCobrancaAberto(false)}
+                className="rounded-lg p-1 text-slate-400 hover:bg-slate-100"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="space-y-3 overflow-y-auto p-4">
+              {gruposPendentes.length > 1 && (
+                <div>
+                  <label className={lbl}>Selecione o {config.labelCliente.toLowerCase()} para cobrar</label>
+                  <select
+                    className={inp}
+                    value={clienteCobrancaSel}
+                    onChange={(e) => trocarClienteCobranca(e.target.value)}
+                  >
+                    {gruposPendentes.map((g) => (
+                      <option key={g.key} value={g.key}>
+                        {g.cliente} ({g.itens.length} pendente(s) · {brl(soma(g.itens.map((x) => x.valor)))})
+                      </option>
+                    ))}
+                    <option value="__todos__">Todos os clientes juntos ({gruposPendentes.length})</option>
+                  </select>
+                </div>
+              )}
+
+              {grupoSelecionadoAtual && (
+                <div className="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                  <span>
+                    Cliente: <b className="text-slate-900">{grupoSelecionadoAtual.cliente}</b>
+                  </span>
+                  <span>
+                    WhatsApp:{' '}
+                    <b className={grupoSelecionadoAtual.telefone ? 'text-emerald-700' : 'text-rose-600'}>
+                      {grupoSelecionadoAtual.telefone || 'Não cadastrado'}
+                    </b>
+                  </span>
+                </div>
+              )}
+
+              <div>
+                <label className={lbl}>Mensagem (você pode revisar ou editar antes de enviar)</label>
+                <textarea
+                  rows={8}
+                  className={`${inp} font-sans leading-relaxed`}
+                  value={mensagemEditada}
+                  onChange={(e) => setMensagemEditada(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-end gap-2 border-t border-slate-200 p-4">
+              {grupoSelecionadoAtual && (
+                <button
+                  type="button"
+                  onClick={() => abrirBaixaLote(grupoSelecionadoAtual.cliente, grupoSelecionadoAtual.itens)}
+                  className="inline-flex items-center justify-center gap-2 rounded-lg border border-emerald-600 px-4 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-50"
+                >
+                  <Check size={16} /> Dar baixa em todos os pendentes deste cliente ({grupoSelecionadoAtual.itens.length})
+                </button>
+              )}
+              <button
+                type="button"
+                className={btnGhost}
+                onClick={async () => {
+                  const ok = await copiar(mensagemEditada)
+                  if (ok) {
+                    setCopiadoModal(true)
+                    setTimeout(() => setCopiadoModal(false), 2500)
+                  }
+                }}
+              >
+                {copiadoModal ? <Check size={16} className="text-emerald-600" /> : <ClipboardCopy size={16} />}
+                {copiadoModal ? 'Mensagem copiada!' : 'Copiar texto'}
+              </button>
+
+              {grupoSelecionadoAtual && whatsLink(grupoSelecionadoAtual.telefone, mensagemEditada) ? (
+                <a
+                  href={whatsLink(grupoSelecionadoAtual.telefone, mensagemEditada)}
+                  target="_blank"
+                  rel="noreferrer"
+                  onClick={() => copiar(mensagemEditada)}
+                  className="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700"
+                >
+                  <Send size={16} /> Enviar no WhatsApp <ExternalLink size={14} />
+                </a>
+              ) : (
+                <button
+                  type="button"
+                  disabled
+                  title={
+                    clienteCobrancaSel === '__todos__'
+                      ? 'Selecione um cliente específico para abrir o WhatsApp direto'
+                      : 'Cadastre o telefone deste cliente para enviar direto'
+                  }
+                  className="inline-flex cursor-not-allowed items-center justify-center gap-2 rounded-lg bg-slate-300 px-4 py-2 text-sm font-semibold text-white"
+                >
+                  <Send size={16} /> Enviar no WhatsApp
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* POP-UP: Pendências agrupadas por cliente */}
+      {modalPendencias && (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/60 p-0 sm:items-center sm:p-4"
+          onClick={() => setModalPendencias(false)}
+        >
+          <div
+            className="flex max-h-[92vh] w-full max-w-lg flex-col rounded-t-2xl bg-white shadow-xl sm:rounded-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-slate-200 p-4">
+              <div>
+                <h3 className="flex items-center gap-2 text-base font-bold text-slate-900">
+                  <Wallet size={20} className="text-red-600" /> Pendências por {config.labelCliente.toLowerCase()}
+                </h3>
+                <p className="text-xs text-slate-500">Todas as datas de entrada · independe dos filtros da lista</p>
+              </div>
+              <button type="button" onClick={() => setModalPendencias(false)} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="overflow-y-auto p-4">
+              {gruposGeral.length === 0 ? (
+                <p className="py-8 text-center text-sm text-slate-500">Nenhuma pendência. Tudo pago! 🎉</p>
+              ) : (
+                <ul className="space-y-2">
+                  {gruposGeral.map((g) => (
+                    <li key={g.key} className="rounded-xl border border-slate-200 p-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="truncate font-bold text-slate-900">{g.cliente}</p>
+                          <p className="text-xs text-slate-500">
+                            {g.itens.length} aparelho(s) · desde{' '}
+                            {fmtData([...g.itens].sort((a, b) => a.dataEntrada.localeCompare(b.dataEntrada))[0].dataEntrada)}
+                          </p>
+                        </div>
+                        <p className="shrink-0 text-lg font-extrabold text-rose-600">{brl(g.total)}</p>
+                      </div>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setModalPendencias(false)
+                            abrirCobrancaCliente(g.key)
+                          }}
+                          className="inline-flex items-center gap-1 rounded-full border border-emerald-300 px-3 py-1 text-xs font-semibold text-emerald-700 hover:bg-emerald-50"
+                        >
+                          <MessageCircle size={13} /> Cobrar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => abrirBaixaLote(g.cliente, g.itens)}
+                          className="inline-flex items-center gap-1 rounded-full bg-emerald-600 px-3 py-1 text-xs font-semibold text-white hover:bg-emerald-700"
+                        >
+                          <Check size={13} /> Quitar tudo
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setFCli(g.cliente)
+                            setFFin('Pendente')
+                            setModoPeriodo('todo_periodo')
+                            setModalPendencias(false)
+                          }}
+                          className="rounded-full border border-slate-300 px-3 py-1 text-xs text-slate-600 hover:bg-slate-50"
+                        >
+                          Ver aparelhos
+                        </button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            {gruposGeral.length > 0 && (
+              <div className="flex items-center justify-between border-t border-slate-200 p-4 text-sm">
+                <span className="text-slate-600">Total a receber</span>
+                <b className="text-lg text-rose-600">{brl(totalGeralPendente)}</b>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* POP-UP: Baixa em lote (todos os pendentes de um cliente) */}
+      {baixaLote && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/60 p-4" onClick={() => setBaixaLote(null)}>
+          <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <h3 className="mb-1 text-base font-bold text-slate-900">Dar baixa em lote</h3>
+            <p className="mb-3 text-sm text-slate-600">
+              Marcar como <b>Pago</b> {baixaLote.itens.length} aparelho(s) de <b>{baixaLote.cliente}</b>, totalizando{' '}
+              <b className="text-emerald-700">{brl(soma(baixaLote.itens.map((i) => i.valor)))}</b>.
+            </p>
+            <ul className="mb-3 max-h-32 space-y-0.5 overflow-y-auto rounded-xl bg-slate-50 p-2 text-xs text-slate-600">
+              {baixaLote.itens.map((i) => (
+                <li key={i.id} className="flex justify-between gap-2">
+                  <span className="truncate">
+                    {fmtData(i.dataEntrada)} · {i.modelo} · {i.servico}
+                  </span>
+                  <span className="shrink-0">{brl(i.valor)}</span>
+                </li>
+              ))}
+            </ul>
+            <label className={lbl}>Data do pagamento</label>
+            <input type="date" className={inp} value={dataBaixaLote} onChange={(e) => setDataBaixaLote(e.target.value)} />
+            <div className="mt-5 flex justify-end gap-2">
+              <button type="button" className={btnGhost} onClick={() => setBaixaLote(null)}>
+                Cancelar
+              </button>
+              <button type="button" className={btnPrimary} onClick={confirmarBaixaLote}>
+                <Check size={16} /> Confirmar baixa
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* AVISO: aparelho ficou Pronto -> WhatsApp discreto */}
+      {avisoPronto && (
+        <div className="fixed inset-x-0 bottom-20 z-[70] flex justify-center px-4 md:bottom-6">
+          <div className="flex w-full max-w-md items-center gap-3 rounded-xl bg-slate-900 p-3 text-sm text-white shadow-xl">
+            <Check size={18} className="shrink-0 text-emerald-400" />
+            <p className="min-w-0 flex-1 truncate">
+              {nomeAparelho(avisoPronto)} marcado como <b>Pronto</b>
+            </p>
+            {whatsLink(avisoPronto.telefone) ? (
+              <a
+                href={whatsLink(avisoPronto.telefone, formatarMensagemPronto(avisoPronto, config))}
+                target="_blank"
+                rel="noreferrer"
+                onClick={() => setAvisoPronto(null)}
+                className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-emerald-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-emerald-500"
+              >
+                <MessageCircle size={14} /> Avisar no WhatsApp
+              </a>
+            ) : (
+              <span className="shrink-0 text-xs text-slate-300">sem telefone</span>
+            )}
+            <button type="button" onClick={() => setAvisoPronto(null)} className="shrink-0 text-slate-300 hover:text-white" aria-label="Fechar">
+              <X size={16} />
+            </button>
+          </div>
+        </div>
+      )}
 
       {modalClientes && (
         <ClientesModal

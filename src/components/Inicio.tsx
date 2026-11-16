@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
-import { ArrowRight, BarChart3, CheckCircle2, Clock, PackageCheck, Plus, Wrench } from 'lucide-react'
+import { ArrowRight, BarChart3, CheckCircle2, Clock, PackageCheck, Plus, Wallet, Wrench } from 'lucide-react'
 import { MasterConfig, Pedido, Servico, StatusBancada } from '../types'
-import { addDias, brl, fmtData, hoje, nomeAparelho, nomeMesAtual, soma, ultimoDiaDoMes } from '../lib/utils'
+import { addDias, brl, norm, fmtData, hoje, nomeAparelho, nomeMesAtual, soma, ultimoDiaDoMes } from '../lib/utils'
 import CumulativeChart, { PontoAcumulado } from './CumulativeChart'
 
 interface Props {
@@ -11,7 +11,10 @@ interface Props {
   onNovoServico: () => void
   onIrParaServicos: (statusFiltro?: StatusBancada) => void
   onIrParaFinanceiro: () => void
+  onIrParaPendencias: () => void
 }
+
+const dataEfetivaPagamento = (s: Servico) => s.dataPagamento || s.dataEntrada
 
 export default function Inicio({
   servicos,
@@ -20,27 +23,38 @@ export default function Inicio({
   onNovoServico,
   onIrParaServicos,
   onIrParaFinanceiro,
+  onIrParaPendencias,
 }: Props) {
   const mesAtual = hoje().slice(0, 7)
 
-  const svMes = useMemo(() => servicos.filter((s) => s.dataEntrada.startsWith(mesAtual)), [servicos, mesAtual])
+  const svEntradasMes = useMemo(
+    () => servicos.filter((s) => s.dataEntrada.startsWith(mesAtual)),
+    [servicos, mesAtual]
+  )
+  const svPagosMes = useMemo(
+    () => servicos.filter((s) => s.statusFin === 'Pago' && dataEfetivaPagamento(s).startsWith(mesAtual)),
+    [servicos, mesAtual]
+  )
   const pdMes = useMemo(() => pedidos.filter((p) => p.data.startsWith(mesAtual)), [pedidos, mesAtual])
 
-  const faturamento = soma(svMes.map((s) => s.valor))
-  const recebido = soma(svMes.filter((s) => s.statusFin === 'Pago').map((s) => s.valor))
-  const aReceber = soma(svMes.filter((s) => s.statusFin === 'Pendente').map((s) => s.valor))
+  const faturamento = soma(svEntradasMes.map((s) => s.valor))
+  const recebido = soma(svPagosMes.map((s) => s.valor))
+  const aReceber = soma(svEntradasMes.filter((s) => s.statusFin === 'Pendente').map((s) => s.valor))
   const insumos = soma(pdMes.map((p) => p.valor))
   const saldoLiquido = recebido - insumos
 
-  const emAndamento = svMes.filter((s) => s.statusBancada === 'Em andamento').length
-  const prontos = svMes.filter((s) => s.statusBancada === 'Pronto').length
-  const entregues = svMes.filter((s) => s.statusBancada === 'Entregue').length
+  const emAndamento = svEntradasMes.filter((s) => s.statusBancada === 'Em andamento').length
+  const prontos = svEntradasMes.filter((s) => s.statusBancada === 'Pronto').length
+  const entregues = svEntradasMes.filter((s) => s.statusBancada === 'Entregue').length
 
   const evolucaoAcumulada = useMemo<PontoAcumulado[]>(() => {
     const totalDias = ultimoDiaDoMes(mesAtual)
     const iniMes = `${mesAtual}-01`
     const porDia = new Map<string, number>()
-    svMes.forEach((s) => porDia.set(s.dataEntrada, (porDia.get(s.dataEntrada) || 0) + s.valor))
+    svPagosMes.forEach((s) => {
+      const d = dataEfetivaPagamento(s)
+      porDia.set(d, (porDia.get(d) || 0) + s.valor)
+    })
 
     let acumulado = 0
     return Array.from({ length: totalDias }, (_, i) => {
@@ -49,11 +63,26 @@ export default function Inicio({
       acumulado += valorDia
       return { iso, valorDia, acumulado }
     })
-  }, [svMes, mesAtual])
+  }, [svPagosMes, mesAtual])
+
+  // Quem está devendo (todas as datas), maiores dívidas primeiro
+  const devedores = useMemo(() => {
+    const mapa = new Map<string, { nome: string; qtd: number; total: number }>()
+    servicos
+      .filter((s) => s.statusFin === 'Pendente')
+      .forEach((s) => {
+        const k = norm(s.lojista)
+        const g = mapa.get(k) || { nome: s.lojista, qtd: 0, total: 0 }
+        g.qtd += 1
+        g.total += s.valor
+        mapa.set(k, g)
+      })
+    return [...mapa.values()].sort((a, b) => b.total - a.total)
+  }, [servicos])
 
   const recentes = useMemo(
-    () => [...svMes].sort((a, b) => b.dataEntrada.localeCompare(a.dataEntrada)).slice(0, 5),
-    [svMes]
+    () => [...svEntradasMes].sort((a, b) => b.dataEntrada.localeCompare(a.dataEntrada)).slice(0, 5),
+    [svEntradasMes]
   )
 
   return (
@@ -64,7 +93,7 @@ export default function Inicio({
             <p className="text-xs font-semibold uppercase tracking-wider text-red-100">Resumo do Mês Atual</p>
             <h2 className="mt-0.5 text-2xl font-extrabold">{nomeMesAtual()}</h2>
             <p className="mt-1 text-sm text-red-100">
-              {svMes.length} aparelho(s) atendido(s) neste mês no laboratório {config.nomeLoja}
+              {svEntradasMes.length} aparelho(s) entraram neste mês no laboratório {config.nomeLoja}
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -86,22 +115,22 @@ export default function Inicio({
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-xs font-medium text-slate-500">Faturamento do mês</p>
+          <p className="text-xs font-medium text-slate-500">Produção / entradas do mês</p>
           <p className="mt-1 text-xl font-extrabold text-slate-900">{brl(faturamento)}</p>
-          <p className="mt-1 text-[11px] text-slate-400">{svMes.length} aparelho(s)</p>
+          <p className="mt-1 text-[11px] text-slate-400">{svEntradasMes.length} aparelho(s)</p>
         </div>
 
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-xs font-medium text-slate-500">Já recebido</p>
+          <p className="text-xs font-medium text-slate-500">Recebido no mês (caixa)</p>
           <p className="mt-1 text-xl font-extrabold text-emerald-600">{brl(recebido)}</p>
-          <p className="mt-1 text-[11px] text-slate-400">Pagamentos confirmados</p>
+          <p className="mt-1 text-[11px] text-slate-400">{svPagosMes.length} pagamento(s) no mês</p>
         </div>
 
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-xs font-medium text-slate-500">A receber</p>
+          <p className="text-xs font-medium text-slate-500">A receber (entradas do mês)</p>
           <p className="mt-1 text-xl font-extrabold text-amber-600">{brl(aReceber)}</p>
           <p className="mt-1 text-[11px] text-slate-400">
-            {svMes.filter((s) => s.statusFin === 'Pendente').length} pendente(s)
+            {svEntradasMes.filter((s) => s.statusFin === 'Pendente').length} pendente(s)
           </p>
         </div>
 
@@ -160,10 +189,38 @@ export default function Inicio({
         </div>
       </section>
 
+      {devedores.length > 0 && (
+        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="mb-3 flex items-center justify-between">
+            <h3 className="flex items-center gap-2 font-bold text-slate-900">
+              <Wallet size={18} className="text-red-600" /> Quem está devendo
+            </h3>
+            <button
+              onClick={onIrParaPendencias}
+              className="inline-flex items-center gap-1 text-xs font-semibold text-red-600 hover:underline"
+            >
+              Cobrar / quitar <ArrowRight size={14} />
+            </button>
+          </div>
+          <ul className="divide-y divide-slate-100">
+            {devedores.slice(0, 5).map((d) => (
+              <li key={d.nome} className="flex items-center justify-between gap-3 py-2">
+                <div className="min-w-0">
+                  <p className="truncate font-semibold text-slate-900">{d.nome}</p>
+                  <p className="text-xs text-slate-500">{d.qtd} aparelho(s) em aberto</p>
+                </div>
+                <p className="shrink-0 font-bold text-rose-600">{brl(d.total)}</p>
+              </li>
+            ))}
+          </ul>
+          {devedores.length > 5 && <p className="mt-2 text-xs text-slate-500">+ {devedores.length - 5} cliente(s)</p>}
+        </section>
+      )}
+
       <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="mb-2 flex items-center justify-between">
-          <h3 className="font-bold text-slate-900">Faturamento acumulado no mês (R$)</h3>
-          <span className="text-xs font-semibold text-red-600">Total: {brl(faturamento)}</span>
+          <h3 className="font-bold text-slate-900">Recebimentos acumulados no mês (R$)</h3>
+          <span className="text-xs font-semibold text-red-600">Total recebido: {brl(recebido)}</span>
         </div>
         <CumulativeChart pontos={evolucaoAcumulada} />
       </section>

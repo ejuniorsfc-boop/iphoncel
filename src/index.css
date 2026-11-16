@@ -19,3 +19,94 @@ select {
   max-width: 100%;
   box-sizing: border-box;
 }
+input[type='date'],
+input[type='month'] {
+  min-height: 2.4rem;
+}
+
+/* Seta do <select> (a classe "appearance-none" remove a seta nativa) */
+select.appearance-none {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 8l5 5 5-5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.6rem center;
+  background-size: 1rem;
+  padding-right: 2rem;
+}
+
+/* ===================== TEMA ESCURO ===================== */
+/* Ativado pela classe "dark" no <html> (botão Sol/Lua). */
+html.dark {
+  color-scheme: dark;
+}
+.dark body {
+  background-color: #0b1220;
+  color: #e2e8f0;
+}
+
+/* superfícies */
+.dark .bg-white { background-color: #111827; }
+.dark .bg-slate-50, .dark .bg-slate-50\/70 { background-color: #0f172a; }
+.dark .bg-slate-100 { background-color: #1e293b; }
+.dark .bg-slate-300 { background-color: #475569; }
+.dark .hover\:bg-white:hover { background-color: #1f2937; }
+.dark .hover\:bg-slate-50:hover { background-color: #1f2937; }
+.dark .hover\:bg-slate-100:hover { background-color: #1e293b; }
+.dark .hover\:bg-slate-700:hover { background-color: #334155; }
+.dark .bg-slate-800 { background-color: #1e293b; }
+.dark .bg-slate-900 { background-color: #1e293b; }
+
+/* bordas */
+.dark .border-slate-100 { border-color: #1e293b; }
+.dark .border-slate-200 { border-color: #263248; }
+.dark .border-slate-300 { border-color: #334155; }
+.dark .divide-slate-100 > :not([hidden]) ~ :not([hidden]) { border-color: #1e293b; }
+
+/* textos */
+.dark .text-slate-900 { color: #f1f5f9; }
+.dark .text-slate-800 { color: #e2e8f0; }
+.dark .text-slate-700 { color: #cbd5e1; }
+.dark .text-slate-600 { color: #b6c2d3; }
+.dark .text-slate-500 { color: #94a3b8; }
+.dark .text-slate-400 { color: #7c8aa0; }
+.dark .text-slate-300 { color: #5b6b82; }
+.dark .hover\:text-slate-700:hover, .dark .hover\:text-slate-600:hover { color: #f1f5f9; }
+.dark .text-red-600 { color: #f87171; }
+.dark .text-red-500 { color: #f87171; }
+.dark .text-red-700 { color: #fca5a5; }
+.dark .text-red-800 { color: #fca5a5; }
+.dark .text-emerald-600, .dark .text-emerald-700 { color: #34d399; }
+.dark .text-emerald-800, .dark .text-emerald-900 { color: #6ee7b7; }
+.dark .text-amber-600, .dark .text-amber-700 { color: #fbbf24; }
+.dark .text-amber-800, .dark .text-amber-900, .dark .text-amber-950 { color: #fcd34d; }
+.dark .text-sky-800, .dark .text-sky-900 { color: #7dd3fc; }
+.dark .text-rose-500, .dark .text-rose-600 { color: #fb7185; }
+.dark .text-rose-800 { color: #fda4af; }
+
+/* fundos coloridos suaves */
+.dark .bg-red-50, .dark .hover\:bg-red-50:hover { background-color: rgba(220, 38, 38, 0.14); }
+.dark .bg-red-100 { background-color: rgba(220, 38, 38, 0.22); }
+.dark .bg-emerald-50\/60, .dark .bg-emerald-50\/70, .dark .hover\:bg-emerald-50:hover { background-color: rgba(16, 185, 129, 0.12); }
+.dark .bg-emerald-100, .dark .hover\:bg-emerald-100\/70:hover { background-color: rgba(16, 185, 129, 0.2); }
+.dark .bg-amber-50, .dark .bg-amber-50\/70 { background-color: rgba(245, 158, 11, 0.12); }
+.dark .bg-amber-100, .dark .hover\:bg-amber-100\/70:hover { background-color: rgba(245, 158, 11, 0.2); }
+.dark .bg-sky-50\/70 { background-color: rgba(14, 165, 233, 0.12); }
+.dark .bg-sky-100, .dark .hover\:bg-sky-100\/70:hover { background-color: rgba(14, 165, 233, 0.2); }
+.dark .bg-rose-100, .dark .hover\:bg-rose-50:hover { background-color: rgba(244, 63, 94, 0.18); }
+.dark .border-red-200, .dark .border-red-300 { border-color: rgba(248, 113, 113, 0.4); }
+.dark .border-emerald-200 { border-color: rgba(16, 185, 129, 0.35); }
+.dark .border-amber-200 { border-color: rgba(245, 158, 11, 0.35); }
+.dark .border-sky-200 { border-color: rgba(14, 165, 233, 0.35); }
+
+/* campos de formulário */
+.dark input, .dark select, .dark textarea { color: #e2e8f0; }
+.dark input::placeholder, .dark textarea::placeholder { color: #64748b; }
+.dark .focus\:ring-red-100:focus { --tw-ring-color: rgba(220, 38, 38, 0.3); }
+.dark select.appearance-none {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%2394a3b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 8l5 5 5-5'/%3E%3C/svg%3E");
+}
+
+/* gráficos (SVG com cores fixas) */
+.dark svg line[stroke='#e2e8f0'] { stroke: #263248; }
+.dark svg text[fill='#64748b'], .dark svg text[fill='#475569'] { fill: #94a3b8; }
+.dark svg path[fill='#fee2e2'] { fill: #7f1d1d; }
+.dark svg circle[fill='#fff'] { fill: #111827; }

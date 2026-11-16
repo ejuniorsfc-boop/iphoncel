@@ -108,6 +108,7 @@ export interface MasterConfig {
   whatsLinha: string
   whatsTotal: string
   whatsRodape: string
+  whatsPronto: string
   pinMaster: string
 }
 
@@ -126,5 +127,6 @@ export const MASTER_CONFIG_PADRAO: MasterConfig = {
   whatsLinha: '{numero}) {data} – {aparelho} – {servico} – {valor}',
   whatsTotal: '*Total a pagar: {total}*',
   whatsRodape: 'Qualquer dúvida é só chamar. Obrigado pela parceria! 🙏',
+  whatsPronto: 'Olá {cliente}, o {aparelho} ({servico}) já está pronto para retirada!',
   pinMaster: '1234',
 }

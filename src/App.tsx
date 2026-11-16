@@ -12,6 +12,7 @@ import Pedidos from './components/Pedidos'
 import Financeiro from './components/Financeiro'
 import Tabela from './components/Tabela'
 import MasterAdmin from './components/MasterAdmin'
+import TemaToggle from './components/TemaToggle'
 import { btnGhost, btnPrimary, inp, lbl } from './lib/utils'
 
 type AbaId = 'inicio' | 'servicos' | 'pedidos' | 'financeiro' | 'precos' | 'master'
@@ -21,6 +22,7 @@ const MASTER_ROW_ID = '__master_config__'
 function Painel({ modo, onSair }: { modo: Modo; onSair: () => void }) {
   const [aba, setAba] = useState<AbaId>('inicio')
   const [abrirNovoDireto, setAbrirNovoDireto] = useState(false)
+  const [abrirPendencias, setAbrirPendencias] = useState(false)
   const [statusFiltroAtalho, setStatusFiltroAtalho] = useState<StatusBancada | '' | undefined>(undefined)
 
   // Controle da aba secreta Admin Master (5 toques/cliques no logo + PIN)
@@ -149,6 +151,7 @@ function Painel({ modo, onSair }: { modo: Modo; onSair: () => void }) {
             ))}
           </nav>
 
+          <TemaToggle />
           <button
             onClick={onSair}
             className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm text-red-50 hover:bg-red-700"
@@ -180,6 +183,10 @@ function Painel({ modo, onSair }: { modo: Modo; onSair: () => void }) {
                   setAba('servicos')
                 }}
                 onIrParaFinanceiro={() => setAba('financeiro')}
+                onIrParaPendencias={() => {
+                  setAbrirPendencias(true)
+                  setAba('servicos')
+                }}
               />
             )}
             {aba === 'servicos' && (
@@ -192,8 +199,11 @@ function Painel({ modo, onSair }: { modo: Modo; onSair: () => void }) {
                 statusInicialFiltro={statusFiltroAtalho}
                 onConsumiuAtalho={() => {
                   setAbrirNovoDireto(false)
+                  setAbrirPendencias(false)
                   setStatusFiltroAtalho(undefined)
                 }}
+                abrirPendenciasDireto={abrirPendencias}
+                onSaveMany={servicos.saveMany}
                 onSave={servicos.save}
                 onRemove={servicos.remove}
                 onSaveLojista={lojistas.save}
@@ -208,6 +218,7 @@ function Painel({ modo, onSair }: { modo: Modo; onSair: () => void }) {
             {aba === 'master' && masterDesbloqueado && (
               <MasterAdmin
                 config={masterConfig}
+                dadosBackup={{ servicos: servicos.items, pedidos: pedidos.items, lojistas: clientesReais, precos: precos.items }}
                 onSaveConfig={salvarMasterConfig}
                 onFecharMaster={() => {
                   setMasterDesbloqueado(false)

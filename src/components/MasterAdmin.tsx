@@ -1,10 +1,12 @@
 import { useState } from 'react'
-import { Check, Lock, RotateCcw, ShieldCheck } from 'lucide-react'
-import { MASTER_CONFIG_PADRAO, MasterConfig, Servico } from '../types'
-import { btnGhost, btnPrimary, card, formatarMensagemCobranca, hoje, inp, lbl } from '../lib/utils'
+import { Check, Download, Lock, RotateCcw, ShieldCheck } from 'lucide-react'
+import { Lojista, MASTER_CONFIG_PADRAO, MasterConfig, Pedido, Preco, Servico } from '../types'
+import { exportarBackup } from '../lib/exportar'
+import { btnGhost, btnPrimary, card, formatarMensagemCobranca, formatarMensagemPronto, hoje, inp, lbl } from '../lib/utils'
 
 interface Props {
   config: MasterConfig
+  dadosBackup: { servicos: Servico[]; pedidos: Pedido[]; lojistas: Lojista[]; precos: Preco[] }
   onSaveConfig: (cfg: MasterConfig) => void
   onFecharMaster: () => void
 }
@@ -42,7 +44,7 @@ const EXEMPLOS_SERVICO: Servico[] = [
   },
 ]
 
-export default function MasterAdmin({ config, onSaveConfig, onFecharMaster }: Props) {
+export default function MasterAdmin({ config, dadosBackup, onSaveConfig, onFecharMaster }: Props) {
   const [form, setForm] = useState<MasterConfig>(config)
   const [salvo, setSalvo] = useState(false)
 
@@ -62,6 +64,7 @@ export default function MasterAdmin({ config, onSaveConfig, onFecharMaster }: Pr
   }
 
   const previewWhats = formatarMensagemCobranca('Loja Exemplo', EXEMPLOS_SERVICO, form)
+  const previewPronto = formatarMensagemPronto(EXEMPLOS_SERVICO[0], form)
 
   return (
     <div className="space-y-4">
@@ -182,6 +185,42 @@ export default function MasterAdmin({ config, onSaveConfig, onFecharMaster }: Pr
               </pre>
             </div>
           </div>
+        </section>
+
+        <section className={card}>
+          <h3 className="mb-1 font-bold text-slate-900">Aviso “Aparelho Pronto” (WhatsApp)</h3>
+          <p className="mb-3 text-xs text-slate-500">
+            Usado no botão de WhatsApp do card e ao mudar o status para Pronto. Variáveis: <code>{'{cliente}'}</code>,{' '}
+            <code>{'{loja}'}</code>, <code>{'{aparelho}'}</code>, <code>{'{servico}'}</code>, <code>{'{valor}'}</code>,{' '}
+            <code>{'{data}'}</code>
+          </p>
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <div>
+              <label className={lbl}>Mensagem</label>
+              <textarea
+                rows={3}
+                className={inp}
+                value={form.whatsPronto}
+                onChange={(e) => set({ whatsPronto: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className={lbl}>Pré-visualização no WhatsApp</label>
+              <pre className="whitespace-pre-wrap rounded-xl border border-emerald-200 bg-emerald-50/70 p-3 font-sans text-xs leading-relaxed text-slate-800">
+                {previewPronto}
+              </pre>
+            </div>
+          </div>
+        </section>
+
+        <section className={card}>
+          <h3 className="mb-1 font-bold text-slate-900">Backup em Excel</h3>
+          <p className="mb-3 text-xs text-slate-500">
+            Baixa um arquivo .xlsx com todos os serviços, pedidos, clientes, pendências por cliente e a tabela de preços.
+          </p>
+          <button type="button" className={btnGhost} onClick={() => exportarBackup(dadosBackup)}>
+            <Download size={16} /> Baixar backup completo (.xlsx)
+          </button>
         </section>
 
         <section className={card}>

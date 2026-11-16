@@ -1,3 +1,4 @@
+import TemaToggle from './TemaToggle'
 import { useState } from 'react'
 import { Smartphone, LogIn, FlaskConical, AlertTriangle } from 'lucide-react'
 import { supabase, supabaseConfigurado } from '../lib/supabase'
@@ -32,6 +33,7 @@ export default function Login({ onLocal }: { onLocal: () => void }) {
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-red-600 to-slate-900 p-4">
+      <TemaToggle variant="login" />
       <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl">
         <div className="mb-6 flex flex-col items-center gap-2">
           <div className="rounded-2xl bg-red-100 p-3 text-red-600">

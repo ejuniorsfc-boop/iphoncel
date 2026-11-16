@@ -50,11 +50,12 @@ export const norm = (s: string) =>
 
 export const soDigitos = (s: string) => (s || '').replace(/\D/g, '')
 
-export const whatsLink = (tel: string) => {
+export const whatsLink = (tel: string, texto?: string) => {
   let d = soDigitos(tel)
   if (!d) return ''
   if (d.length <= 11) d = '55' + d
-  return `https://wa.me/${d}`
+  const baseUrl = `https://wa.me/${d}`
+  return texto ? `${baseUrl}?text=${encodeURIComponent(texto)}` : baseUrl
 }
 
 export async function copiar(texto: string) {
@@ -84,6 +85,16 @@ export const addDias = (iso: string, n: number) =>
   new Date(paraDataUTC(iso).getTime() + n * 86400000).toISOString().slice(0, 10)
 export const diffDias = (a: string, b: string) =>
   Math.round((paraDataUTC(b).getTime() - paraDataUTC(a).getTime()) / 86400000)
+
+export const intervaloSemanaAtual = () => {
+  const h = hoje()
+  const dt = paraDataUTC(h)
+  const diaSem = dt.getUTCDay() // 0=Dom, 1=Seg...6=Sab
+  const diffSeg = diaSem === 0 ? -6 : 1 - diaSem
+  const ini = addDias(h, diffSeg)
+  const fim = addDias(ini, 6)
+  return { ini, fim }
+}
 
 // ---------- padronização de textos ----------
 export const capitalizar = (t: string) =>
@@ -171,6 +182,20 @@ export const nomeAparelho = (s: { marca: string; modelo: string }) =>
   s.marca && norm(s.marca) !== 'apple' && norm(s.marca) !== 'outros' && !norm(s.modelo).includes(norm(s.marca))
     ? `${s.marca} ${s.modelo}`
     : s.modelo
+
+/** Aviso de "aparelho pronto" para um serviço. Variáveis: {cliente} {loja} {aparelho} {servico} {valor} {data} */
+export function formatarMensagemPronto(s: Servico, cfg: MasterConfig = MASTER_CONFIG_PADRAO): string {
+  const tpl = cfg.whatsPronto || MASTER_CONFIG_PADRAO.whatsPronto
+  const vars: Record<string, string> = {
+    cliente: s.lojista,
+    loja: cfg.nomeLoja,
+    aparelho: nomeAparelho(s),
+    servico: s.servico,
+    valor: brl(s.valor),
+    data: fmtData(s.dataEntrada),
+  }
+  return Object.entries(vars).reduce((acc, [k, v]) => acc.split(`{${k}}`).join(v), tpl)
+}
 
 export function formatarMensagemCobranca(
   clienteNome: string,

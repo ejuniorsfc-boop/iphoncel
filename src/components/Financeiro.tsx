@@ -1,4 +1,6 @@
 import { useMemo, useState } from 'react'
+import { Download } from 'lucide-react'
+import { exportarFechamento } from '../lib/exportar'
 import { Pedido, Servico } from '../types'
 import {
   brl,
@@ -75,11 +77,12 @@ function BarChart({
   )
 }
 
-function Indicador({ titulo, valor, cor }: { titulo: string; valor: string; cor?: string }) {
+function Indicador({ titulo, valor, subtitulo, cor }: { titulo: string; valor: string; subtitulo?: string; cor?: string }) {
   return (
     <div className={card}>
       <p className="text-xs font-medium text-slate-500">{titulo}</p>
       <p className={`mt-1 text-xl font-bold ${cor || 'text-slate-900'}`}>{valor}</p>
+      {subtitulo && <p className="mt-1 text-[11px] text-slate-400">{subtitulo}</p>}
     </div>
   )
 }
@@ -98,6 +101,8 @@ function agrupar(itens: Servico[], chaveNome: (s: Servico) => { key: string; nom
   return [...mapa.values()].sort((a, b) => b.fat - a.fat)
 }
 
+const dataEfetivaPagamento = (s: Servico) => s.dataPagamento || s.dataEntrada
+
 export default function Financeiro({ servicos, pedidos }: { servicos: Servico[]; pedidos: Pedido[] }) {
   const [modo, setModo] = useState<'mes' | 'periodo'>('mes')
   const [mes, setMes] = useState(hoje().slice(0, 7))
@@ -109,24 +114,41 @@ export default function Financeiro({ servicos, pedidos }: { servicos: Servico[];
   const ini = modo === 'mes' ? (mesOk ? `${mes}-01` : '') : pIni
   const fim = modo === 'mes' ? (mesOk ? `${mes}-${String(ultimoDiaDoMes(mes)).padStart(2, '0')}` : '') : pFim
 
-  const sv = useMemo(
+  // Serviços que entraram no período (produção / entradas)
+  const svEntradas = useMemo(
     () => servicos.filter((s) => (!ini || s.dataEntrada >= ini) && (!fim || s.dataEntrada <= fim)),
     [servicos, ini, fim]
   )
+
+  // Serviços PAGOS cuja data de pagamento cai dentro do período selecionado (regime de caixa)
+  const svPagosNoPeriodo = useMemo(
+    () =>
+      servicos.filter((s) => {
+        if (s.statusFin !== 'Pago') return false
+        const dp = dataEfetivaPagamento(s)
+        return (!ini || dp >= ini) && (!fim || dp <= fim)
+      }),
+    [servicos, ini, fim]
+  )
+
   const pd = useMemo(() => pedidos.filter((p) => (!ini || p.data >= ini) && (!fim || p.data <= fim)), [pedidos, ini, fim])
 
-  const faturamento = soma(sv.map((s) => s.valor))
-  const recebido = soma(sv.filter((s) => s.statusFin === 'Pago').map((s) => s.valor))
-  const aReceber = soma(sv.filter((s) => s.statusFin === 'Pendente').map((s) => s.valor))
+  const producaoPeriodo = soma(svEntradas.map((s) => s.valor))
+  const recebidoNoPeriodo = soma(svPagosNoPeriodo.map((s) => s.valor))
+  const aReceberGeral = soma(servicos.filter((s) => s.statusFin === 'Pendente').map((s) => s.valor))
   const insumos = soma(pd.map((p) => p.valor))
-  const lucro = recebido - insumos
+  const lucro = recebidoNoPeriodo - insumos
 
   const { rs, re, dias } = useMemo(() => {
-    const datas = [...sv.map((s) => s.dataEntrada), ...pd.map((p) => p.data)].sort()
+    const datas = [
+      ...svPagosNoPeriodo.map((s) => dataEfetivaPagamento(s)),
+      ...svEntradas.map((s) => s.dataEntrada),
+      ...pd.map((p) => p.data),
+    ].sort()
     const a = ini || datas[0] || hoje()
     const b = fim || datas[datas.length - 1] || hoje()
     return { rs: a, re: b, dias: a <= b ? diffDias(a, b) + 1 : 0 }
-  }, [sv, pd, ini, fim])
+  }, [svPagosNoPeriodo, svEntradas, pd, ini, fim])
 
   const periodos = useMemo(() => {
     if (dias === 0) return [] as { label: string; fat: number; custo: number; vol: number }[]
@@ -148,8 +170,8 @@ export default function Financeiro({ servicos, pedidos }: { servicos: Servico[];
       buckets = meses.map((m) => ({ label: `${m.slice(5)}/${m.slice(2, 4)}`, fat: 0, custo: 0, vol: 0 }))
       idx = (d) => meses.indexOf(d.slice(0, 7))
     }
-    sv.forEach((s) => {
-      const b = buckets[idx(s.dataEntrada)]
+    svPagosNoPeriodo.forEach((s) => {
+      const b = buckets[idx(dataEfetivaPagamento(s))]
       if (b) {
         b.fat += s.valor
         b.vol += 1
@@ -160,14 +182,17 @@ export default function Financeiro({ servicos, pedidos }: { servicos: Servico[];
       if (b) b.custo += p.valor
     })
     return buckets
-  }, [sv, pd, rs, re, dias])
+  }, [svPagosNoPeriodo, pd, rs, re, dias])
   const semanal = dias <= 62
 
-  // Evolução diária ACUMULADA do faturamento (soma dia a dia até o final do mês/período)
+  // Evolução diária ACUMULADA do faturamento recebido (regime de caixa pela data de pagamento)
   const diarioAcumulado = useMemo<PontoAcumulado[]>(() => {
     if (dias === 0 || dias > 366) return []
     const mapa = new Map<string, number>()
-    sv.forEach((s) => mapa.set(s.dataEntrada, (mapa.get(s.dataEntrada) || 0) + s.valor))
+    svPagosNoPeriodo.forEach((s) => {
+      const dp = dataEfetivaPagamento(s)
+      mapa.set(dp, (mapa.get(dp) || 0) + s.valor)
+    })
     let acumulado = 0
     return Array.from({ length: dias }, (_, i) => {
       const iso = addDias(rs, i)
@@ -175,16 +200,16 @@ export default function Financeiro({ servicos, pedidos }: { servicos: Servico[];
       acumulado += valorDia
       return { iso, valorDia, acumulado }
     })
-  }, [sv, rs, dias])
+  }, [svPagosNoPeriodo, rs, dias])
 
   const porTipo = useMemo(
-    () => agrupar(sv, (s) => ({ key: norm(s.tipo) || 'sem tipo', nome: capitalizar(s.tipo) || 'Sem tipo' })),
-    [sv]
+    () => agrupar(svEntradas, (s) => ({ key: norm(s.tipo) || 'sem tipo', nome: capitalizar(s.tipo) || 'Sem tipo' })),
+    [svEntradas]
   )
 
   const porMarca = useMemo(
-    () => agrupar(sv, (s) => ({ key: norm(s.marca) || 'sem marca', nome: capitalizar(s.marca) || 'Sem marca' })),
-    [sv]
+    () => agrupar(svEntradas, (s) => ({ key: norm(s.marca) || 'sem marca', nome: capitalizar(s.marca) || 'Sem marca' })),
+    [svEntradas]
   )
   const marcasGrafico = useMemo(() => {
     const topo = porMarca.slice(0, 8)
@@ -195,7 +220,7 @@ export default function Financeiro({ servicos, pedidos }: { servicos: Servico[];
 
   const modelos = useMemo(() => {
     const mapa = new Map<string, { marca: string; modelo: string; fat: number; qtd: number; marcaKey: string }>()
-    sv.forEach((s) => {
+    svEntradas.forEach((s) => {
       const modelo = padronizarModelo(s.modelo)
       const marcaKey = norm(s.marca) || 'sem marca'
       const key = `${marcaKey}|${norm(modelo)}`
@@ -205,12 +230,26 @@ export default function Financeiro({ servicos, pedidos }: { servicos: Servico[];
       mapa.set(key, g)
     })
     return [...mapa.values()].sort((a, b) => b.fat - a.fat || b.qtd - a.qtd)
-  }, [sv])
+  }, [svEntradas])
   const modelosFiltrados = modelos.filter((m) => !fMarca || m.marcaKey === fMarca)
   const opcoesMarca = useMemo(
     () => [...new Map(modelos.map((m) => [m.marcaKey, m.marca])).entries()].sort((a, b) => a[1].localeCompare(b[1], 'pt-BR')),
     [modelos]
   )
+
+  const podeExportar = !(ini && fim && ini > fim) && (modo === 'periodo' || mesOk)
+  const baixarExcel = () =>
+    exportarFechamento({
+      slug: modo === 'mes' ? mes : `${ini}_a_${fim}`,
+      rotulo: modo === 'mes' ? `Mês ${mes.slice(5)}/${mes.slice(0, 4)}` : `${ini.split('-').reverse().join('/')} a ${fim.split('-').reverse().join('/')}`,
+      ini,
+      fim,
+      todos: servicos,
+      entradas: svEntradas,
+      pagos: svPagosNoPeriodo,
+      pedidos: pd,
+      ind: { recebido: recebidoNoPeriodo, producao: producaoPeriodo, aReceber: aReceberGeral, insumos, lucro },
+    })
 
   const botaoModo = (ativo: boolean) =>
     `rounded-lg px-3 py-2 text-sm font-medium ${ativo ? 'bg-red-600 text-white' : 'bg-white text-slate-600 border border-slate-300 hover:bg-slate-50'}`
@@ -244,22 +283,52 @@ export default function Financeiro({ servicos, pedidos }: { servicos: Servico[];
               </div>
             </>
           )}
+          <button
+            type="button"
+            disabled={!podeExportar}
+            onClick={baixarExcel}
+            className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-100 disabled:opacity-50 sm:ml-auto"
+          >
+            <Download size={16} /> Exportar Excel
+          </button>
         </div>
         {ini && fim && ini > fim && <p className="mt-2 text-sm text-red-600">A data inicial é maior que a data final.</p>}
+        <p className="mt-2 text-[11px] text-slate-500">
+          * Os valores recebidos e o lucro líquido contabilizam os serviços pela <b>data do pagamento</b> (regime de caixa).
+        </p>
       </section>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-        <Indicador titulo="Faturamento lançado" valor={brl(faturamento)} />
-        <Indicador titulo="Já recebido" valor={brl(recebido)} cor="text-emerald-600" />
-        <Indicador titulo="A receber" valor={brl(aReceber)} cor="text-amber-600" />
-        <Indicador titulo="Pedidos / insumos" valor={brl(insumos)} cor="text-slate-700" />
-        <Indicador titulo="Lucro líquido real" valor={brl(lucro)} cor={lucro < 0 ? 'text-red-600' : 'text-emerald-700'} />
+        <Indicador
+          titulo="Faturamento recebido (caixa)"
+          valor={brl(recebidoNoPeriodo)}
+          subtitulo={`${svPagosNoPeriodo.length} pagamento(s) no período`}
+          cor="text-emerald-600"
+        />
+        <Indicador
+          titulo="Produção / entradas no período"
+          valor={brl(producaoPeriodo)}
+          subtitulo={`${svEntradas.length} aparelho(s) entraram`}
+        />
+        <Indicador
+          titulo="A receber (total pendente)"
+          valor={brl(aReceberGeral)}
+          subtitulo={`${servicos.filter((s) => s.statusFin === 'Pendente').length} aparelho(s) em aberto`}
+          cor="text-amber-600"
+        />
+        <Indicador titulo="Pedidos / insumos" valor={brl(insumos)} subtitulo={`${pd.length} lançamento(s)`} cor="text-slate-700" />
+        <Indicador
+          titulo="Lucro líquido real"
+          valor={brl(lucro)}
+          subtitulo="Recebido no período − insumos"
+          cor={lucro < 0 ? 'text-red-600' : 'text-emerald-700'}
+        />
       </div>
 
       <section className={card}>
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-          <h3 className="font-bold text-slate-900">Evolução diária acumulada do faturamento (R$)</h3>
-          <span className="text-xs font-semibold text-red-600">Total acumulado: {brl(faturamento)}</span>
+          <h3 className="font-bold text-slate-900">Evolução diária acumulada dos recebimentos (R$)</h3>
+          <span className="text-xs font-semibold text-red-600">Total recebido no período: {brl(recebidoNoPeriodo)}</span>
         </div>
         {dias > 366 ? (
           <p className="py-6 text-center text-sm text-slate-500">Período muito longo para a visão diária. Selecione até 1 ano.</p>
@@ -270,29 +339,29 @@ export default function Financeiro({ servicos, pedidos }: { servicos: Servico[];
 
       <div className="grid gap-4 lg:grid-cols-2">
         <section className={card}>
-          <h3 className="mb-2 font-bold text-slate-900">Faturamento × Custos por {semanal ? 'semana' : 'mês'} (R$)</h3>
+          <h3 className="mb-2 font-bold text-slate-900">Recebido × Custos por {semanal ? 'semana' : 'mês'} (R$)</h3>
           <BarChart
             data={periodos.map((s) => ({ label: s.label, values: [s.fat, s.custo] }))}
             series={[
-              { name: 'Faturamento', color: COR_PRINCIPAL },
+              { name: 'Recebido (Caixa)', color: COR_PRINCIPAL },
               { name: 'Custos', color: COR_SECUNDARIA },
             ]}
             fmt={fmtMoeda}
           />
         </section>
         <section className={card}>
-          <h3 className="mb-2 font-bold text-slate-900">Volume de serviços por {semanal ? 'semana' : 'mês'}</h3>
+          <h3 className="mb-2 font-bold text-slate-900">Serviços pagos por {semanal ? 'semana' : 'mês'}</h3>
           <BarChart
             data={periodos.map((s) => ({ label: s.label, values: [s.vol] }))}
-            series={[{ name: 'Serviços', color: COR_SECUNDARIA }]}
+            series={[{ name: 'Pagamentos', color: COR_SECUNDARIA }]}
             fmt={fmtNum}
           />
         </section>
         <section className={card}>
-          <h3 className="mb-2 font-bold text-slate-900">Faturamento por tipo de aparelho (R$)</h3>
+          <h3 className="mb-2 font-bold text-slate-900">Produção por tipo de aparelho (R$)</h3>
           <BarChart
             data={porTipo.map((s) => ({ label: s.nome, values: [s.fat] }))}
-            series={[{ name: 'Faturamento', color: COR_PRINCIPAL }]}
+            series={[{ name: 'Produção', color: COR_PRINCIPAL }]}
             fmt={fmtMoeda}
           />
         </section>
@@ -300,28 +369,28 @@ export default function Financeiro({ servicos, pedidos }: { servicos: Servico[];
           <h3 className="mb-2 font-bold text-slate-900">Volume por tipo de aparelho</h3>
           <BarChart
             data={porTipo.map((s) => ({ label: s.nome, values: [s.qtd] }))}
-            series={[{ name: 'Serviços', color: COR_SECUNDARIA }]}
+            series={[{ name: 'Aparelhos', color: COR_SECUNDARIA }]}
             fmt={fmtNum}
           />
         </section>
       </div>
 
       <section className="space-y-4">
-        <h2 className="text-lg font-bold text-slate-900">Desempenho por Marca e Modelo</h2>
+        <h2 className="text-lg font-bold text-slate-900">Desempenho por Marca e Modelo (Entradas no Período)</h2>
         <div className="grid gap-4 lg:grid-cols-2">
           <div className={card}>
-            <h3 className="mb-2 font-bold text-slate-900">Faturamento por marca (R$)</h3>
+            <h3 className="mb-2 font-bold text-slate-900">Produção por marca (R$)</h3>
             <BarChart
               data={marcasGrafico.map((g) => ({ label: g.nome, values: [g.fat] }))}
-              series={[{ name: 'Faturamento', color: COR_PRINCIPAL }]}
+              series={[{ name: 'Produção', color: COR_PRINCIPAL }]}
               fmt={fmtMoeda}
             />
           </div>
           <div className={card}>
-            <h3 className="mb-2 font-bold text-slate-900">Quantidade de serviços por marca</h3>
+            <h3 className="mb-2 font-bold text-slate-900">Quantidade de aparelhos por marca</h3>
             <BarChart
               data={marcasGrafico.map((g) => ({ label: g.nome, values: [g.qtd] }))}
-              series={[{ name: 'Serviços', color: COR_SECUNDARIA }]}
+              series={[{ name: 'Aparelhos', color: COR_SECUNDARIA }]}
               fmt={fmtNum}
             />
           </div>
@@ -353,7 +422,7 @@ export default function Financeiro({ servicos, pedidos }: { servicos: Servico[];
                     <th className="px-3 py-2">Marca</th>
                     <th className="px-3 py-2">Modelo</th>
                     <th className="px-3 py-2 text-right">Qtd.</th>
-                    <th className="px-3 py-2 text-right">Faturamento</th>
+                    <th className="px-3 py-2 text-right">Produção</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
